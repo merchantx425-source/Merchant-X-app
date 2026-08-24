@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { ethers } from 'ethers';
 import { CryptoAsset, FiatCurrency, TransactionRecord } from '../types/merchant';
-import { SUPPORTED_ASSETS, SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
+import { SUPPORTED_ASSETS, SUPPORTED_FIAT, EXPLORER_URLS, ERC20_ABI } from '../config/constants';
 import {
   verifyBlockchainTransaction,
   scanForIncomingPayment,
@@ -65,37 +66,180 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
   const [verifiedTx, setVerifiedTx] = useState<TransactionRecord | null>(null);
   const [lastScanNotice, setLastScanNotice] = useState<string>('Listening for on-chain broadcast...');
+  const [qrMode, setQrMode] = useState<'smart' | 'address'>('smart');
+  const [isWeb3Signing, setIsWeb3Signing] = useState(false);
+  const [web3SignError, setWeb3SignError] = useState<string | null>(null);
 
   const assetConfig = SUPPORTED_ASSETS[cryptoAsset];
   const fiatConfig = SUPPORTED_FIAT[fiatCurrency];
   const isApprovedRef = useRef(false);
   const isScanInFlightRef = useRef(false);
 
+  // Format precise crypto decimal string with no scientific notation
+  const getCleanAmountString = (amount: number, maxDecimals: number = 8) => {
+    return amount.toLocaleString('fullwide', {
+      useGrouping: false,
+      maximumFractionDigits: maxDecimals,
+    });
+  };
+
   // Build Standard Universal Web3 Crypto URI for Customer QR Code
   const getPaymentUri = () => {
+    const cleanAddr = merchantWallet.trim();
+
+    if (qrMode === 'address') {
+      return cleanAddr;
+    }
+
     if (cryptoAsset === 'BTC') {
-      return `bitcoin:${merchantWallet}?amount=${amountCrypto}&label=Merchant%20X%20Payment`;
+      const btcAmountStr = getCleanAmountString(amountCrypto, 8);
+      return `bitcoin:${cleanAddr}?amount=${btcAmountStr}&label=Merchant%20X`;
     }
+
     if (cryptoAsset === 'ETH') {
-      return `ethereum:${merchantWallet}?value=${Math.floor(amountCrypto * 1e18)}`;
+      try {
+        const ethAmountStr = getCleanAmountString(amountCrypto, 18);
+        const wei = ethers.parseUnits(ethAmountStr, 18).toString();
+        return `ethereum:${cleanAddr}@1?value=${wei}`;
+      } catch {
+        return `ethereum:${cleanAddr}`;
+      }
     }
+
     if (cryptoAsset === 'POL') {
-      return `ethereum:${merchantWallet}@137?value=${Math.floor(amountCrypto * 1e18)}`;
+      try {
+        const polAmountStr = getCleanAmountString(amountCrypto, 18);
+        const wei = ethers.parseUnits(polAmountStr, 18).toString();
+        return `ethereum:${cleanAddr}@137?value=${wei}`;
+      } catch {
+        return `ethereum:${cleanAddr}`;
+      }
     }
+
     if (cryptoAsset === 'USDT') {
-      return `ethereum:${assetConfig.contractAddress}@137/transfer?address=${merchantWallet}&uint256=${Math.floor(
-        amountCrypto * 1e6
-      )}`;
+      try {
+        const usdtAmountStr = getCleanAmountString(amountCrypto, 6);
+        const rawUnits = ethers.parseUnits(usdtAmountStr, 6).toString();
+        const contract = assetConfig.contractAddress || '0xc2132D05D31c914a87C6611C10748AEb04B58e8F';
+        return `ethereum:${contract}@137/transfer?address=${cleanAddr}&uint256=${rawUnits}`;
+      } catch {
+        return `ethereum:${cleanAddr}`;
+      }
     }
+
     if (cryptoAsset === 'VERSE') {
-      return `ethereum:${assetConfig.contractAddress}@137/transfer?address=${merchantWallet}&uint256=${Math.floor(
-        amountCrypto * 1e18
-      )}`;
+      try {
+        const verseAmountStr = getCleanAmountString(amountCrypto, 18);
+        const rawUnits = ethers.parseUnits(verseAmountStr, 18).toString();
+        const contract = assetConfig.contractAddress || '0xc3aa16362d381282d7bfcf73812d46e300958ad8';
+        return `ethereum:${contract}@137/transfer?address=${cleanAddr}&uint256=${rawUnits}`;
+      } catch {
+        return `ethereum:${cleanAddr}`;
+      }
     }
-    return `ethereum:${merchantWallet}`;
+
+    return `ethereum:${cleanAddr}`;
   };
 
   const paymentUri = getPaymentUri();
+
+  // One-Click Direct Web3 Wallet Payment (Customer Signs Immediately)
+  const handleDirectWeb3Pay = async () => {
+    if (cryptoAsset === 'BTC') {
+      // BTC deep-link opening
+      window.location.href = `bitcoin:${merchantWallet}?amount=${getCleanAmountString(amountCrypto, 8)}`;
+      return;
+    }
+
+    if (typeof window === 'undefined' || !(window as any).ethereum) {
+      setWeb3SignError('No browser Web3 wallet detected. Scan the QR code with your mobile wallet app.');
+      return;
+    }
+
+    setIsWeb3Signing(true);
+    setWeb3SignError(null);
+
+    try {
+      const ethProvider = new ethers.BrowserProvider((window as any).ethereum);
+      const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+      if (!accounts || accounts.length === 0) {
+        throw new Error('Wallet connection cancelled by user.');
+      }
+
+      const signer = await ethProvider.getSigner();
+      const customerAddr = await signer.getAddress();
+
+      // Check and switch network if necessary
+      const isPolygonAsset = cryptoAsset === 'POL' || cryptoAsset === 'VERSE' || cryptoAsset === 'USDT';
+      const targetChainIdHex = isPolygonAsset ? '0x89' : '0x1'; // 137 Polygon or 1 Ethereum
+
+      const currentNetwork = await ethProvider.getNetwork();
+      const currentChainId = Number(currentNetwork.chainId);
+
+      if (isPolygonAsset && currentChainId !== 137) {
+        try {
+          await (window as any).ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: '0x89' }],
+          });
+        } catch (switchErr: any) {
+          if (switchErr.code === 4902) {
+            await (window as any).ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [
+                {
+                  chainId: '0x89',
+                  chainName: 'Polygon Mainnet',
+                  nativeCurrency: { name: 'POL', symbol: 'POL', decimals: 18 },
+                  rpcUrls: ['https://polygon-rpc.com'],
+                  blockExplorerUrls: ['https://polygonscan.com/'],
+                },
+              ],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+      } else if (!isPolygonAsset && currentChainId !== 1) {
+        await (window as any).ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: '0x1' }],
+        });
+      }
+
+      // Re-instantiate signer after potential chain switch
+      const activeProvider = new ethers.BrowserProvider((window as any).ethereum);
+      const activeSigner = await activeProvider.getSigner();
+
+      let txResponse: any;
+
+      if (cryptoAsset === 'POL' || cryptoAsset === 'ETH') {
+        // Native Transfer
+        const wei = ethers.parseEther(amountCrypto.toFixed(18));
+        txResponse = await activeSigner.sendTransaction({
+          to: merchantWallet,
+          value: wei,
+        });
+      } else {
+        // ERC-20 Transfer (VERSE or USDT)
+        const decimals = assetConfig.decimals;
+        const rawAmount = ethers.parseUnits(getCleanAmountString(amountCrypto, decimals), decimals);
+        const contract = new ethers.Contract(assetConfig.contractAddress!, ERC20_ABI, activeSigner);
+        txResponse = await contract.transfer(merchantWallet, rawAmount);
+      }
+
+      if (txResponse?.hash) {
+        setLastScanNotice(`Payment submitted (${txResponse.hash.slice(0, 10)}...). Confirming on-chain...`);
+        // Feed into manual verification immediately
+        await handleVerifyTransaction(txResponse.hash);
+      }
+    } catch (err: any) {
+      console.warn('Web3 signing error:', err);
+      setWeb3SignError(err?.reason || err?.message || 'Transaction signing was rejected or failed.');
+    } finally {
+      setIsWeb3Signing(false);
+    }
+  };
 
   // Reset modal state when opening (NO automatic wallet launches for merchant)
   useEffect(() => {
@@ -363,7 +507,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               <div className="flex items-center justify-between w-full text-xs text-zinc-400 px-1">
                 <span className="font-semibold text-zinc-300 flex items-center gap-1">
                   <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Scan with any Web3 Wallet to Pay</span>
+                  <span>Scan to Sign & Pay</span>
                 </span>
                 <div className="flex items-center gap-1 text-[11px] font-mono text-zinc-400">
                   <Clock className="w-3 h-3 text-zinc-500" />
@@ -371,18 +515,74 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 </div>
               </div>
 
+              {/* QR Mode Switcher */}
+              <div className="flex items-center p-0.5 bg-[#161822] rounded-xl border border-zinc-800 text-[11px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setQrMode('smart')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    qrMode === 'smart'
+                      ? 'bg-amber-500 text-black font-bold shadow'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Prefilled Payment QR
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQrMode('address')}
+                  className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                    qrMode === 'address'
+                      ? 'bg-amber-500 text-black font-bold shadow'
+                      : 'text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >
+                  Address Only QR
+                </button>
+              </div>
+
               {/* Crisp SVG QR Code */}
               <div className="p-3.5 bg-white rounded-2xl shadow-xl flex items-center justify-center">
                 <QRCodeSVG
                   value={paymentUri}
-                  size={190}
+                  size={195}
                   level="M"
                   includeMargin={false}
                 />
               </div>
 
               <div className="text-[11px] text-zinc-400 max-w-xs leading-tight">
-                Scan with <strong className="text-white">Bitcoin.com Wallet</strong>, MetaMask, Rainbow, Trust Wallet, or Phantom
+                {qrMode === 'smart'
+                  ? 'Scans directly into wallet with network, recipient & amount prefilled for 1-click signing.'
+                  : 'Raw receiving address for older wallet scanners.'}
+              </div>
+
+              {/* One-Click Direct Web3 Sign & Pay Button */}
+              <div className="w-full pt-1 space-y-2">
+                <button
+                  type="button"
+                  onClick={handleDirectWeb3Pay}
+                  disabled={isWeb3Signing}
+                  className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99] disabled:opacity-50"
+                >
+                  {isWeb3Signing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-black" />
+                      <span>Requesting Signature in Wallet...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ArrowUpRight className="w-4 h-4 text-black font-extrabold" />
+                      <span>Pay with Connected Web3 Wallet (Direct Sign)</span>
+                    </>
+                  )}
+                </button>
+
+                {web3SignError && (
+                  <div className="text-[11px] text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg p-2 text-left">
+                    {web3SignError}
+                  </div>
+                )}
               </div>
             </div>
 
