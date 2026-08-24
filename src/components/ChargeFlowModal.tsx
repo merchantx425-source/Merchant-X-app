@@ -65,7 +65,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const [scanPulseCount, setScanPulseCount] = useState(0);
   const [initialBalRaw, setInitialBalRaw] = useState<number>(0);
   const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
-  const [, setVerifiedTx] = useState<TransactionRecord | null>(null);
+  const [verifiedTx, setVerifiedTx] = useState<TransactionRecord | null>(null);
   const [lastScanNotice, setLastScanNotice] = useState<string>('Listening for on-chain broadcast...');
 
   const assetConfig = SUPPORTED_ASSETS[cryptoAsset];
@@ -141,6 +141,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     }) => {
       if (isApprovedRef.current) return;
       isApprovedRef.current = true;
+      setIsScanning(false);
 
       const now = new Date();
       const txRecord: TransactionRecord = {
@@ -177,7 +178,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         // Ignore
       }
 
-      onPaymentSuccess(txRecord);
+      // Automatically transition to the generated receipt after 1.4s visual confirmation
+      setTimeout(() => {
+        onPaymentSuccess(txRecord);
+      }, 1400);
     },
     [amountFiat, fiatCurrency, amountCrypto, cryptoAsset, assetConfig.network, cryptoRate, merchantWallet, onPaymentSuccess]
   );
@@ -517,13 +521,13 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
 
         {/* Approved State */}
         {step === 'approved' && (
-          <div className="py-8 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-emerald-950/80 border-2 border-emerald-500 flex items-center justify-center text-emerald-400">
+          <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
+            <div className="w-16 h-16 rounded-full bg-emerald-950/80 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 animate-bounce">
               <CheckCircle2 className="w-9 h-9" />
             </div>
             <div className="space-y-1">
               <span className="inline-block px-3 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs font-extrabold tracking-wider uppercase rounded-full">
-                {getTranslation(language, 'paymentApproved')}
+                {getTranslation(language, 'paymentApproved')} ✓
               </span>
               <div className="text-3xl font-extrabold font-display text-white mt-2">
                 {formattedFiat}
@@ -544,14 +548,14 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
               <div className="flex items-center justify-between text-zinc-400">
                 <span>{getTranslation(language, 'txHash')}:</span>
-                {txHashInput ? (
+                {verifiedTx?.txHash || txHashInput ? (
                   <a
-                    href={`${EXPLORER_URLS[assetConfig.network]}/tx/${txHashInput}`}
+                    href={`${EXPLORER_URLS[assetConfig.network]}/tx/${verifiedTx?.txHash || txHashInput}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1"
                   >
-                    <span>{formatAddress(txHashInput, 4)}</span>
+                    <span>{formatAddress(verifiedTx?.txHash || txHashInput, 4)}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 ) : (
@@ -559,6 +563,17 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 )}
               </div>
             </div>
+
+            {verifiedTx && (
+              <button
+                type="button"
+                onClick={() => onPaymentSuccess(verifiedTx)}
+                className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer mt-2"
+              >
+                <span>View Receipt Now</span>
+                <ArrowUpRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         )}
 
