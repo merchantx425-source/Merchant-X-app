@@ -397,8 +397,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
                   </div>
-                  <span className="text-xs font-bold text-cyan-300">
-                    Live Auto-Payment Scanner
+                  <span className="text-xs font-extrabold tracking-wide uppercase text-cyan-300">
+                    WAITING FOR PAYMENT
                   </span>
                 </div>
                 <button
@@ -418,8 +418,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
 
               <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-cyan-900/40">
-                <span>Cycles scanned: #{scanPulseCount}</span>
-                <span className="font-semibold text-emerald-400">Exact amount verified on-chain</span>
+                <span>Network: <strong className="text-zinc-300">{assetConfig.network}</strong></span>
+                <span className="font-semibold text-emerald-400">Strict on-chain settlement</span>
               </div>
             </div>
 

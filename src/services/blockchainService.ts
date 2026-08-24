@@ -365,9 +365,32 @@ export async function fetchRealAssetBalance(
 
     // A. POL (Polygon Native)
     if (asset === 'POL') {
-      const wei = await executeWithPolygonFallback((provider) => provider.getBalance(cleanAddr));
-      const formatted = ethers.formatEther(wei);
-      const raw = parseFloat(formatted);
+      let raw = 0;
+      try {
+        const wei = await executeWithPolygonFallback((provider) => provider.getBalance(cleanAddr));
+        raw = parseFloat(ethers.formatEther(wei));
+      } catch (rpcErr) {
+        // Fallback 1: Polygon Blockscout REST API
+        try {
+          const bsRes = await fetch(`https://polygon.blockscout.com/api/v2/addresses/${cleanAddr}`).then((r) =>
+            r.ok ? r.json() : null
+          );
+          if (bsRes?.coin_balance) {
+            raw = parseFloat(ethers.formatEther(bsRes.coin_balance));
+          }
+        } catch {
+          // Fallback 2: Polygonscan REST API
+          try {
+            const psRes = await fetch(
+              `https://api.polygonscan.com/api?module=account&action=balance&address=${cleanAddr}&tag=latest`
+            ).then((r) => (r.ok ? r.json() : null));
+            if (psRes?.result) {
+              raw = parseFloat(ethers.formatEther(psRes.result));
+            }
+          } catch {}
+        }
+      }
+
       return {
         balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }),
         balanceRaw: raw,
@@ -377,9 +400,32 @@ export async function fetchRealAssetBalance(
 
     // B. ETH (Ethereum Native)
     if (asset === 'ETH') {
-      const wei = await executeWithEthereumFallback((provider) => provider.getBalance(cleanAddr));
-      const formatted = ethers.formatEther(wei);
-      const raw = parseFloat(formatted);
+      let raw = 0;
+      try {
+        const wei = await executeWithEthereumFallback((provider) => provider.getBalance(cleanAddr));
+        raw = parseFloat(ethers.formatEther(wei));
+      } catch (rpcErr) {
+        // Fallback 1: Eth Blockscout REST API
+        try {
+          const bsRes = await fetch(`https://eth.blockscout.com/api/v2/addresses/${cleanAddr}`).then((r) =>
+            r.ok ? r.json() : null
+          );
+          if (bsRes?.coin_balance) {
+            raw = parseFloat(ethers.formatEther(bsRes.coin_balance));
+          }
+        } catch {
+          // Fallback 2: Etherscan REST API
+          try {
+            const esRes = await fetch(
+              `https://api.etherscan.io/api?module=account&action=balance&address=${cleanAddr}&tag=latest`
+            ).then((r) => (r.ok ? r.json() : null));
+            if (esRes?.result) {
+              raw = parseFloat(ethers.formatEther(esRes.result));
+            }
+          } catch {}
+        }
+      }
+
       return {
         balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 6 }),
         balanceRaw: raw,
@@ -390,13 +436,27 @@ export async function fetchRealAssetBalance(
     // C. VERSE (ERC-20 on Polygon, with Ethereum cross-check fallback)
     if (asset === 'VERSE') {
       let rawBalPolygon = 0n;
+      let fetched = false;
       try {
         rawBalPolygon = await executeWithPolygonFallback(async (provider) => {
           const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
           return await contract.balanceOf(cleanAddr);
         });
+        fetched = true;
       } catch (pErr) {
-        console.warn('Verse Polygon query warning:', pErr);
+        console.warn('Verse Polygon RPC query warning:', pErr);
+      }
+
+      if (!fetched) {
+        // Fallback: Polygonscan token balance
+        try {
+          const psRes = await fetch(
+            `https://api.polygonscan.com/api?module=account&action=tokenbalance&contractaddress=0xc3aa16362d381282d7bfcf73812d46e300958ad8&address=${cleanAddr}&tag=latest`
+          ).then((r) => (r.ok ? r.json() : null));
+          if (psRes?.result && psRes.result !== '0') {
+            rawBalPolygon = BigInt(psRes.result);
+          }
+        } catch {}
       }
 
       const formatted = ethers.formatUnits(rawBalPolygon, config.decimals);
@@ -430,13 +490,27 @@ export async function fetchRealAssetBalance(
     // D. USDT (ERC-20 on Polygon, with Ethereum cross-check)
     if (asset === 'USDT') {
       let rawBalPolygon = 0n;
+      let fetched = false;
       try {
         rawBalPolygon = await executeWithPolygonFallback(async (provider) => {
           const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
           return await contract.balanceOf(cleanAddr);
         });
+        fetched = true;
       } catch (pErr) {
-        console.warn('USDT Polygon query warning:', pErr);
+        console.warn('USDT Polygon RPC query warning:', pErr);
+      }
+
+      if (!fetched) {
+        // Fallback: Polygonscan token balance
+        try {
+          const psRes = await fetch(
+            `https://api.polygonscan.com/api?module=account&action=tokenbalance&contractaddress=0xc2132D05D31c914a87C6611C10748AEb04B58e8F&address=${cleanAddr}&tag=latest`
+          ).then((r) => (r.ok ? r.json() : null));
+          if (psRes?.result && psRes.result !== '0') {
+            rawBalPolygon = BigInt(psRes.result);
+          }
+        } catch {}
       }
 
       const formatted = ethers.formatUnits(rawBalPolygon, config.decimals);

@@ -3,7 +3,7 @@ import { CryptoAsset, AssetBalance } from '../types/merchant';
 import { SUPPORTED_ASSETS, ASSET_ORDER } from '../config/constants';
 import { getTranslation } from '../config/i18n';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 
 interface AssetSelectorProps {
   selectedAsset: CryptoAsset;
@@ -81,14 +81,6 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
               <div className="w-full mt-1 pt-1 border-t border-zinc-800/50">
                 {balanceData?.isLoading ? (
                   <div className="h-3 w-8 bg-zinc-800 animate-pulse rounded mx-auto" />
-                ) : balanceData?.error ? (
-                  <div
-                    className="text-[9px] text-red-400/90 font-medium truncate px-0.5 flex items-center justify-center gap-0.5"
-                    title={balanceData.error}
-                  >
-                    <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
-                    <span>0</span>
-                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center">
                     <span
