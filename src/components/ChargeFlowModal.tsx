@@ -1,7 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CryptoAsset, FiatCurrency, TransactionRecord } from '../types/merchant';
 import { SUPPORTED_ASSETS, SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
-import { verifyBlockchainTransaction, formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import {
+  verifyBlockchainTransaction,
+  scanForIncomingPayment,
+  fetchRealAssetBalance,
+  formatCryptoAmount,
+  formatAddress,
+} from '../services/blockchainService';
 import { getTranslation } from '../config/i18n';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
 import {
@@ -16,6 +22,9 @@ import {
   ArrowUpRight,
   Wallet,
   Smartphone,
+  Radio,
+  RefreshCw,
+  Zap,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -52,10 +61,16 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const [copiedAmount, setCopiedAmount] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(900); // 15 minute payment invoice window
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanPulseCount, setScanPulseCount] = useState(0);
+  const [initialBalRaw, setInitialBalRaw] = useState<number>(0);
+  const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
   const [, setVerifiedTx] = useState<TransactionRecord | null>(null);
+  const [lastScanNotice, setLastScanNotice] = useState<string>('Listening for on-chain broadcast...');
 
   const assetConfig = SUPPORTED_ASSETS[cryptoAsset];
   const fiatConfig = SUPPORTED_FIAT[fiatCurrency];
+  const isApprovedRef = useRef(false);
 
   // Build Bitcoin.com Wallet specific receive deep link URI
   const getBitcoinDotComUri = () => {
@@ -77,13 +92,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
       return `ethereum:${merchantWallet}@137?value=${Math.floor(amountCrypto * 1e18)}`;
     }
     if (cryptoAsset === 'USDT') {
-      // Polygon USDT ERC20 Transfer URI
       return `ethereum:${assetConfig.contractAddress}@137/transfer?address=${merchantWallet}&uint256=${Math.floor(
         amountCrypto * 1e6
       )}`;
     }
     if (cryptoAsset === 'VERSE') {
-      // Polygon Verse ERC20 Transfer URI
       return `ethereum:${assetConfig.contractAddress}@137/transfer?address=${merchantWallet}&uint256=${Math.floor(
         amountCrypto * 1e18
       )}`;
@@ -91,17 +104,146 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     return `ethereum:${merchantWallet}`;
   };
 
-  // Automatically attempt opening Bitcoin.com Wallet app / Web3 wallet receive screen when Charge opens
+  // Reset modal state when opening
   useEffect(() => {
-    if (isOpen && step === 'awaiting_payment') {
+    if (isOpen) {
+      setStep('awaiting_payment');
+      setSessionStartTime(Date.now());
+      setErrorMsg(null);
+      setTxHashInput('');
+      setTimeLeft(900);
+      isApprovedRef.current = false;
+      setLastScanNotice(`Scanning ${assetConfig.network} network for incoming payment...`);
+
+      // Fetch baseline initial balance for delta tracking
+      fetchRealAssetBalance(cryptoAsset, merchantWallet).then((res) => {
+        setInitialBalRaw(res.balanceRaw);
+      });
+
+      // Automatically launch Bitcoin.com Wallet receive screen
       const bitcoinComUri = getBitcoinDotComUri();
       try {
         window.location.href = bitcoinComUri;
       } catch {
-        // Handled gracefully in UI
+        // Handled gracefully
       }
     }
-  }, [isOpen, cryptoAsset]);
+  }, [isOpen, cryptoAsset, merchantWallet]);
+
+  // Payment Approved Success Handler
+  const triggerPaymentApproved = useCallback(
+    (params: {
+      txHash: string;
+      customerAddress?: string;
+      actualAmount?: number;
+      blockNumber?: number;
+      timestamp?: number;
+    }) => {
+      if (isApprovedRef.current) return;
+      isApprovedRef.current = true;
+
+      const now = new Date();
+      const txRecord: TransactionRecord = {
+        id: `TX-${Date.now().toString(36).toUpperCase()}`,
+        reference: `MX-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+        amountFiat,
+        fiatCurrency,
+        amountCrypto: params.actualAmount || amountCrypto,
+        cryptoAsset,
+        network: assetConfig.network,
+        cryptoRate,
+        merchantWallet,
+        customerWallet: params.customerAddress || 'Verified Customer',
+        txHash: params.txHash,
+        status: 'paid',
+        timestamp: params.timestamp || Date.now(),
+        formattedDate: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        formattedTime: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        blockNumber: params.blockNumber,
+      };
+
+      setVerifiedTx(txRecord);
+      setStep('approved');
+
+      // Confetti celebration
+      try {
+        confetti({
+          particleCount: 110,
+          spread: 80,
+          origin: { y: 0.55 },
+          colors: ['#F59E0B', '#00D2FF', '#8A2BE2', '#10B981', '#ffffff'],
+        });
+      } catch {
+        // Ignore
+      }
+
+      onPaymentSuccess(txRecord);
+    },
+    [amountFiat, fiatCurrency, amountCrypto, cryptoAsset, assetConfig.network, cryptoRate, merchantWallet, onPaymentSuccess]
+  );
+
+  // Background Automatic Rolling Scanner (checks every 3.5s)
+  const performAutoScan = useCallback(async () => {
+    if (!isOpen || step !== 'awaiting_payment' || isApprovedRef.current) return;
+
+    setIsScanning(true);
+    setScanPulseCount((c) => c + 1);
+
+    try {
+      const scanResult = await scanForIncomingPayment({
+        merchantWallet,
+        expectedAsset: cryptoAsset,
+        expectedAmountCrypto: amountCrypto,
+        sessionStartTimestamp: sessionStartTime,
+        initialBalanceRaw: initialBalRaw,
+      });
+
+      if (scanResult.isDetected && scanResult.txHash) {
+        setLastScanNotice(`✓ Payment detected on ${assetConfig.network}! Verifying confirmation...`);
+        triggerPaymentApproved({
+          txHash: scanResult.txHash,
+          customerAddress: scanResult.customerAddress,
+          actualAmount: scanResult.actualAmount,
+          blockNumber: scanResult.blockNumber,
+        });
+      } else {
+        setLastScanNotice(`Active radar scanning ${assetConfig.network} blocks... (${new Date().toLocaleTimeString()})`);
+      }
+    } catch (err) {
+      console.warn('Auto scan notice:', err);
+    } finally {
+      setIsScanning(false);
+    }
+  }, [
+    isOpen,
+    step,
+    merchantWallet,
+    cryptoAsset,
+    amountCrypto,
+    sessionStartTime,
+    initialBalRaw,
+    assetConfig.network,
+    triggerPaymentApproved,
+  ]);
+
+  // Set up repeating rolling scan interval
+  useEffect(() => {
+    if (!isOpen || step !== 'awaiting_payment') return;
+
+    // Initial check after 2 seconds
+    const firstTimeout = setTimeout(() => {
+      performAutoScan();
+    }, 2000);
+
+    const interval = setInterval(() => {
+      performAutoScan();
+    }, 3500);
+
+    return () => {
+      clearTimeout(firstTimeout);
+      clearInterval(interval);
+    };
+  }, [isOpen, step, performAutoScan]);
 
   // Timer countdown
   useEffect(() => {
@@ -151,11 +293,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     }
   };
 
-  // Run On-chain Blockchain Verification
+  // Run Manual On-chain Blockchain Verification
   const handleVerifyTransaction = async (hashToVerify?: string) => {
     const hash = (hashToVerify || txHashInput).trim();
     if (!hash) {
-      setErrorMsg('Please enter or provide the transaction hash to verify on-chain.');
+      setErrorMsg('Please enter a transaction hash to verify on-chain.');
       return;
     }
 
@@ -171,43 +313,13 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
       });
 
       if (result.isVerified) {
-        // Build confirmed Transaction Record
-        const now = new Date();
-        const txRecord: TransactionRecord = {
-          id: `TX-${Date.now().toString(36).toUpperCase()}`,
-          reference: `MX-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-          amountFiat,
-          fiatCurrency,
-          amountCrypto: result.actualAmount || amountCrypto,
-          cryptoAsset,
-          network: assetConfig.network,
-          cryptoRate,
-          merchantWallet,
-          customerWallet: result.customerAddress,
+        triggerPaymentApproved({
           txHash: hash,
-          status: 'paid',
-          timestamp: result.timestamp || Date.now(),
-          formattedDate: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-          formattedTime: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          customerAddress: result.customerAddress,
+          actualAmount: result.actualAmount,
           blockNumber: result.blockNumber,
-        };
-
-        setVerifiedTx(txRecord);
-        setStep('approved');
-
-        // Confetti celebration
-        try {
-          confetti({
-            particleCount: 90,
-            spread: 70,
-            origin: { y: 0.6 },
-            colors: ['#F59E0B', '#00D2FF', '#8A2BE2', '#10B981', '#ffffff'],
-          });
-        } catch {
-          // Ignore
-        }
-
-        onPaymentSuccess(txRecord);
+          timestamp: result.timestamp,
+        });
       } else {
         setStep('failed');
         setErrorMsg(result.errorMessage || 'Transaction could not be verified on the blockchain.');
@@ -234,7 +346,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 {cryptoAsset} Payment Flow
               </span>
               <span className="text-[10px] text-zinc-400">
-                {assetConfig.network} Network • Non-Custodial
+                {assetConfig.network} Network • Non-Custodial POS
               </span>
             </div>
           </div>
@@ -270,6 +382,40 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
             </div>
 
+            {/* LIVE ROLLING RADAR / AUTO-DETECTION PANEL */}
+            <div className="bg-gradient-to-r from-[#0d1726] to-[#141226] border border-cyan-500/30 rounded-2xl p-3.5 space-y-2.5 relative overflow-hidden">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
+                  </div>
+                  <span className="text-xs font-bold text-cyan-300">
+                    Live Auto-Payment Scanner
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => performAutoScan()}
+                  disabled={isScanning}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold rounded-lg transition-all cursor-pointer"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin text-amber-400' : ''}`} />
+                  <span>{isScanning ? 'Scanning...' : 'Check Payment Now'}</span>
+                </button>
+              </div>
+
+              <div className="text-[11px] font-mono text-zinc-300 flex items-center gap-1.5 truncate">
+                <Radio className="w-3.5 h-3.5 text-cyan-400 shrink-0 animate-pulse" />
+                <span className="truncate">{lastScanNotice}</span>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-zinc-400 pt-1 border-t border-cyan-900/40">
+                <span>Cycles scanned: #{scanPulseCount}</span>
+                <span className="font-semibold text-emerald-400">Exact amount verified on-chain</span>
+              </div>
+            </div>
+
             {/* Bitcoin.com Wallet Direct Action Box */}
             <div className="p-4 bg-gradient-to-b from-[#0a1924] to-[#121824] border border-cyan-800/50 rounded-2xl space-y-2.5">
               <div className="flex items-center justify-between text-xs">
@@ -284,9 +430,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
 
               <p className="text-xs text-zinc-300 leading-relaxed">
-                Tap below to launch the <strong className="text-white">Bitcoin.com Wallet</strong> app directly to the{' '}
-                <strong className="text-cyan-400">RECEIVE</strong> screen for{' '}
-                <strong className="text-amber-400">{cryptoAsset}</strong>. The wallet will display its native QR code for the customer to scan and pay.
+                When customer scans & pays in <strong className="text-white">Bitcoin.com Wallet</strong>, Merchant X detects the transaction automatically.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -400,21 +544,25 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
               <div className="flex items-center justify-between text-zinc-400">
                 <span>{getTranslation(language, 'txHash')}:</span>
-                <a
-                  href={`${EXPLORER_URLS[assetConfig.network]}/tx/${txHashInput}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1"
-                >
-                  <span>{formatAddress(txHashInput, 4)}</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
+                {txHashInput ? (
+                  <a
+                    href={`${EXPLORER_URLS[assetConfig.network]}/tx/${txHashInput}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1"
+                  >
+                    <span>{formatAddress(txHashInput, 4)}</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                ) : (
+                  <span className="text-emerald-400 font-mono text-[11px]">Auto-Confirmed on Blockchain ✓</span>
+                )}
               </div>
             </div>
           </div>
         )}
 
-        {/* Failed State */}
+        {/* Failed / Fraud Detected State */}
         {step === 'failed' && (
           <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
             <div className="w-14 h-14 rounded-full bg-red-950/80 border-2 border-red-500 flex items-center justify-center text-red-400">
@@ -432,7 +580,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 onClick={() => setStep('awaiting_payment')}
                 className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
               >
-                Back
+                Back to POS Flow
               </button>
               <button
                 type="button"
