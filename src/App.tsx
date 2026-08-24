@@ -99,7 +99,7 @@ export default function App() {
     ETH: 4980000,
     USDT: 1580,
     POL: 660,
-    VERSE: 0.44,
+    VERSE: 0.02844,
   });
   const [ratesError, setRatesError] = useState<string | null>(null);
   const [lastRatesUpdated, setLastRatesUpdated] = useState<number>(Date.now());
