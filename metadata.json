@@ -1,0 +1,8 @@
+{
+  "name": "Merchant X",
+  "description": "Next-generation cryptocurrency merchant POS and payment terminal supporting VERSE, POL, USDT, ETH, and BTC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

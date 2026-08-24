@@ -1,0 +1,159 @@
+import { CryptoAsset, CryptoAssetConfig, FiatCurrency, FiatCurrencyConfig } from '../types/merchant';
+
+export const WALLETCONNECT_PROJECT_ID = 
+  import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || '31ef6d708552677094488d29f5846014';
+
+export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
+  VERSE: {
+    symbol: 'VERSE',
+    name: 'Verse',
+    network: 'Polygon',
+    networkFamily: 'evm',
+    decimals: 18,
+    contractAddress: '0xc2e9678A71e50E5AEd036e00e9c5caeb1aC55270',
+    coingeckoId: 'verse',
+    iconColor: '#0085FF',
+    badge: 'Polygon',
+  },
+  POL: {
+    symbol: 'POL',
+    name: 'Polygon Ecosystem',
+    network: 'Polygon',
+    networkFamily: 'evm',
+    decimals: 18,
+    coingeckoId: 'matic-network',
+    iconColor: '#8247E5',
+    badge: 'Polygon',
+  },
+  USDT: {
+    symbol: 'USDT',
+    name: 'Tether USD',
+    network: 'Polygon',
+    networkFamily: 'evm',
+    decimals: 6,
+    contractAddress: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+    coingeckoId: 'tether',
+    iconColor: '#26A17B',
+    badge: 'Polygon / ERC-20',
+  },
+  ETH: {
+    symbol: 'ETH',
+    name: 'Ethereum',
+    network: 'Ethereum',
+    networkFamily: 'evm',
+    decimals: 18,
+    coingeckoId: 'ethereum',
+    iconColor: '#627EEA',
+    badge: 'Ethereum',
+  },
+  BTC: {
+    symbol: 'BTC',
+    name: 'Bitcoin',
+    network: 'Bitcoin',
+    networkFamily: 'bitcoin',
+    decimals: 8,
+    coingeckoId: 'bitcoin',
+    iconColor: '#F7931A',
+    badge: 'Bitcoin',
+  },
+};
+
+export const ASSET_ORDER: CryptoAsset[] = ['VERSE', 'POL', 'USDT', 'ETH', 'BTC'];
+
+export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
+  NGN: {
+    code: 'NGN',
+    symbol: '₦',
+    name: 'Nigerian Naira',
+    locale: 'en-NG',
+  },
+  USD: {
+    code: 'USD',
+    symbol: '$',
+    name: 'US Dollar',
+    locale: 'en-US',
+  },
+  EUR: {
+    code: 'EUR',
+    symbol: '€',
+    name: 'Euro',
+    locale: 'de-DE',
+  },
+  GBP: {
+    code: 'GBP',
+    symbol: '£',
+    name: 'British Pound',
+    locale: 'en-GB',
+  },
+  CAD: {
+    code: 'CAD',
+    symbol: 'CA$',
+    name: 'Canadian Dollar',
+    locale: 'en-CA',
+  },
+  ZAR: {
+    code: 'ZAR',
+    symbol: 'R',
+    name: 'South African Rand',
+    locale: 'en-ZA',
+  },
+  KES: {
+    code: 'KES',
+    symbol: 'KSh',
+    name: 'Kenyan Shilling',
+    locale: 'en-KE',
+  },
+  GHS: {
+    code: 'GHS',
+    symbol: 'GH₵',
+    name: 'Ghanaian Cedi',
+    locale: 'en-GH',
+  },
+};
+
+// Public reliable RPC Endpoints
+export const RPC_URLS = {
+  POLYGON: [
+    'https://polygon-rpc.com',
+    'https://rpc.ankr.com/polygon',
+    'https://polygon.drpc.org',
+    'https://1rpc.io/matic',
+  ],
+  ETHEREUM: [
+    'https://cloudflare-eth.com',
+    'https://rpc.ankr.com/eth',
+    'https://eth.drpc.org',
+    'https://1rpc.io/eth',
+  ],
+  BITCOIN_APIS: [
+    'https://mempool.space/api',
+    'https://blockstream.info/api',
+  ],
+};
+
+export const EXPLORER_URLS = {
+  Polygon: 'https://polygonscan.com',
+  Ethereum: 'https://etherscan.io',
+  Bitcoin: 'https://mempool.space',
+};
+
+// Standard ERC20 ABI snippet for balanceOf & transfer
+export const ERC20_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function transfer(address to, uint amount) returns (bool)',
+];
+
+export const DEFAULT_SETTINGS = {
+  fiatCurrency: 'NGN' as FiatCurrency,
+  theme: 'dark' as const,
+  language: 'en',
+  biometricEnabled: false,
+  soundEnabled: true,
+  hapticEnabled: true,
+  merchantName: 'Merchant X Store #1',
+  merchantLocation: 'Lagos, Nigeria',
+  customBtcReceivingAddress: '',
+  customEvmReceivingAddress: '',
+};
