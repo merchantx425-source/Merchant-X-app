@@ -10,21 +10,19 @@ import {
 } from '../services/blockchainService';
 import { getTranslation } from '../config/i18n';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   X,
   ExternalLink,
-  ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Clock,
   Copy,
   Check,
   ArrowUpRight,
-  Wallet,
-  Smartphone,
   Radio,
   RefreshCw,
-  Zap,
+  QrCode,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -59,10 +57,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const [txHashInput, setTxHashInput] = useState('');
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [copiedAmount, setCopiedAmount] = useState(false);
+  const [copiedUri, setCopiedUri] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(900); // 15 minute payment invoice window
   const [isScanning, setIsScanning] = useState(false);
-  const [scanPulseCount, setScanPulseCount] = useState(0);
   const [initialBalRaw, setInitialBalRaw] = useState<number>(0);
   const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
   const [verifiedTx, setVerifiedTx] = useState<TransactionRecord | null>(null);
@@ -73,16 +71,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const isApprovedRef = useRef(false);
   const isScanInFlightRef = useRef(false);
 
-  // Build Bitcoin.com Wallet specific receive deep link URI
-  const getBitcoinDotComUri = () => {
-    const coinSymbol = cryptoAsset === 'POL' ? 'MATIC' : cryptoAsset;
-    return `bitcoincom://receive?coin=${coinSymbol}&address=${encodeURIComponent(
-      merchantWallet
-    )}&amount=${amountCrypto}&reference=MerchantX`;
-  };
-
-  // Build Standard Universal Web3 Crypto URI
-  const getStandardCryptoUri = () => {
+  // Build Standard Universal Web3 Crypto URI for Customer QR Code
+  const getPaymentUri = () => {
     if (cryptoAsset === 'BTC') {
       return `bitcoin:${merchantWallet}?amount=${amountCrypto}&label=Merchant%20X%20Payment`;
     }
@@ -105,7 +95,9 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     return `ethereum:${merchantWallet}`;
   };
 
-  // Reset modal state when opening
+  const paymentUri = getPaymentUri();
+
+  // Reset modal state when opening (NO automatic wallet launches for merchant)
   useEffect(() => {
     if (isOpen) {
       setStep('awaiting_payment');
@@ -120,18 +112,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
       fetchRealAssetBalance(cryptoAsset, merchantWallet).then((res) => {
         setInitialBalRaw(res.balanceRaw);
       });
-
-      // Automatically launch Bitcoin.com Wallet receive screen
-      const bitcoinComUri = getBitcoinDotComUri();
-      try {
-        window.location.href = bitcoinComUri;
-      } catch {
-        // Handled gracefully
-      }
     }
-  }, [isOpen, cryptoAsset, merchantWallet]);
+  }, [isOpen, cryptoAsset, merchantWallet, assetConfig.network]);
 
-  // Payment Approved Success Handler
+  // Payment Approved Success Handler (only invoked upon verified blockchain confirmation)
   const triggerPaymentApproved = useCallback(
     (params: {
       txHash: string;
@@ -179,21 +163,20 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         // Ignore
       }
 
-      // Automatically transition to the generated receipt after 1.4s visual confirmation
+      // Transition to the generated receipt after 1.5s visual confirmation
       setTimeout(() => {
         onPaymentSuccess(txRecord);
-      }, 1400);
+      }, 1500);
     },
     [amountFiat, fiatCurrency, amountCrypto, cryptoAsset, assetConfig.network, cryptoRate, merchantWallet, onPaymentSuccess]
   );
 
-  // Background Automatic Rolling Scanner (checks every 2.5s)
+  // Background Automatic Continuous Rolling Scanner (checks every 2.5s)
   const performAutoScan = useCallback(async () => {
     if (!isOpen || step !== 'awaiting_payment' || isApprovedRef.current || isScanInFlightRef.current) return;
 
     isScanInFlightRef.current = true;
     setIsScanning(true);
-    setScanPulseCount((c) => c + 1);
 
     try {
       const scanResult = await scanForIncomingPayment({
@@ -233,11 +216,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     triggerPaymentApproved,
   ]);
 
-  // Set up repeating rolling scan interval (snappy 2.5s polling)
+  // Continuous background polling
   useEffect(() => {
     if (!isOpen || step !== 'awaiting_payment') return;
 
-    // Initial check after 800ms
     const firstTimeout = setTimeout(() => {
       performAutoScan();
     }, 800);
@@ -252,7 +234,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     };
   }, [isOpen, step, performAutoScan]);
 
-  // Timer countdown
+  // Invoice Timer Countdown
   useEffect(() => {
     if (!isOpen || step === 'approved') return;
     const timer = setInterval(() => {
@@ -271,36 +253,23 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const formattedCrypto = `${formatCryptoAmount(amountCrypto, cryptoAsset)} ${cryptoAsset}`;
 
   // Copy helpers
-  const handleCopy = (text: string, type: 'addr' | 'amount') => {
+  const handleCopy = (text: string, type: 'addr' | 'amount' | 'uri') => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
       if (type === 'addr') {
         setCopiedAddr(true);
         setTimeout(() => setCopiedAddr(false), 2000);
-      } else {
+      } else if (type === 'amount') {
         setCopiedAmount(true);
         setTimeout(() => setCopiedAmount(false), 2000);
+      } else {
+        setCopiedUri(true);
+        setTimeout(() => setCopiedUri(false), 2000);
       }
     }
   };
 
-  // Launch Bitcoin.com Wallet directly
-  const handleOpenBitcoinDotComWallet = () => {
-    const uri = getBitcoinDotComUri();
-    if (typeof window !== 'undefined') {
-      window.location.href = uri;
-    }
-  };
-
-  // Launch Standard Web3 Wallet
-  const handleOpenStandardWallet = () => {
-    const uri = getStandardCryptoUri();
-    if (typeof window !== 'undefined') {
-      window.location.href = uri;
-    }
-  };
-
-  // Run Manual On-chain Blockchain Verification
+  // Run Manual On-chain Blockchain Verification (if merchant/customer enters hash)
   const handleVerifyTransaction = async (hashToVerify?: string) => {
     const hash = (hashToVerify || txHashInput).trim();
     if (!hash) {
@@ -342,7 +311,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const formattedTimeLeft = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
       <div className="relative w-full max-w-md bg-[#111319] border border-purple-900/30 rounded-3xl p-5 sm:p-6 shadow-2xl text-white overflow-hidden max-h-[95vh] overflow-y-auto">
         {/* Modal Header */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
@@ -350,10 +319,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
             <CryptoAssetIcon asset={cryptoAsset} size="md" />
             <div className="flex flex-col">
               <span className="font-extrabold text-sm sm:text-base font-display tracking-tight text-white flex items-center gap-1.5">
-                {cryptoAsset} Payment Flow
+                {cryptoAsset} Payment
               </span>
               <span className="text-[10px] text-zinc-400">
-                {assetConfig.network} Network • Non-Custodial POS
+                {assetConfig.network} Network • Non-Custodial Direct Pay
               </span>
             </div>
           </div>
@@ -367,9 +336,9 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
 
         {/* Dynamic Flow States */}
         {step === 'awaiting_payment' && (
-          <div className="py-4 space-y-4">
+          <div className="py-3 space-y-3.5">
             {/* Amount Banner */}
-            <div className="bg-[#181a24] border border-zinc-800/80 rounded-2xl p-4 text-center">
+            <div className="bg-[#181a24] border border-zinc-800/80 rounded-2xl p-3.5 text-center">
               <div className="text-xs uppercase font-bold tracking-widest text-zinc-400 mb-0.5">
                 {getTranslation(language, 'enterAmount')}
               </div>
@@ -389,13 +358,41 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
             </div>
 
+            {/* CUSTOMER PAYMENT QR CODE CARD */}
+            <div className="flex flex-col items-center justify-center p-4 bg-[#0a0c12] border border-zinc-800/90 rounded-2xl text-center space-y-3">
+              <div className="flex items-center justify-between w-full text-xs text-zinc-400 px-1">
+                <span className="font-semibold text-zinc-300 flex items-center gap-1">
+                  <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Scan with any Web3 Wallet to Pay</span>
+                </span>
+                <div className="flex items-center gap-1 text-[11px] font-mono text-zinc-400">
+                  <Clock className="w-3 h-3 text-zinc-500" />
+                  <span>{formattedTimeLeft}</span>
+                </div>
+              </div>
+
+              {/* Crisp SVG QR Code */}
+              <div className="p-3.5 bg-white rounded-2xl shadow-xl flex items-center justify-center">
+                <QRCodeSVG
+                  value={paymentUri}
+                  size={190}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+
+              <div className="text-[11px] text-zinc-400 max-w-xs leading-tight">
+                Scan with <strong className="text-white">Bitcoin.com Wallet</strong>, MetaMask, Rainbow, Trust Wallet, or Phantom
+              </div>
+            </div>
+
             {/* LIVE ROLLING RADAR / AUTO-DETECTION PANEL */}
-            <div className="bg-gradient-to-r from-[#0d1726] to-[#141226] border border-cyan-500/30 rounded-2xl p-3.5 space-y-2.5 relative overflow-hidden">
+            <div className="bg-gradient-to-r from-[#0d1726] to-[#141226] border border-cyan-500/30 rounded-2xl p-3 space-y-2 relative overflow-hidden">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="relative flex h-3 w-3">
+                  <div className="relative flex h-2.5 w-2.5">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
                   </div>
                   <span className="text-xs font-extrabold tracking-wide uppercase text-cyan-300">
                     WAITING FOR PAYMENT
@@ -405,7 +402,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                   type="button"
                   onClick={() => performAutoScan()}
                   disabled={isScanning}
-                  className="flex items-center gap-1 px-2.5 py-1 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold rounded-lg transition-all cursor-pointer"
+                  className="flex items-center gap-1 px-2.5 py-1 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 text-[10px] font-bold rounded-lg transition-all cursor-pointer"
                 >
                   <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin text-amber-400' : ''}`} />
                   <span>{isScanning ? 'Scanning...' : 'Check Payment Now'}</span>
@@ -423,46 +420,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
             </div>
 
-            {/* Bitcoin.com Wallet Direct Action Box */}
-            <div className="p-4 bg-gradient-to-b from-[#0a1924] to-[#121824] border border-cyan-800/50 rounded-2xl space-y-2.5">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 font-bold text-cyan-400">
-                  <Smartphone className="w-4 h-4 text-cyan-400" />
-                  <span>Bitcoin.com Wallet Native Receive</span>
-                </div>
-                <div className="flex items-center gap-1 text-[11px] font-mono text-zinc-400">
-                  <Clock className="w-3 h-3" />
-                  <span>{formattedTimeLeft}</span>
-                </div>
-              </div>
-
-              <p className="text-xs text-zinc-300 leading-relaxed">
-                When customer scans & pays in <strong className="text-white">Bitcoin.com Wallet</strong>, Merchant X detects the transaction automatically.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={handleOpenBitcoinDotComWallet}
-                  className="w-full py-3 px-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-extrabold text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <Wallet className="w-4 h-4" />
-                  <span>Open Bitcoin.com Receive</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenStandardWallet}
-                  className="w-full py-3 px-3 bg-[#1e2330] hover:bg-[#282e40] border border-zinc-700 text-zinc-200 font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowUpRight className="w-4 h-4 text-amber-400" />
-                  <span>Open Web3 Wallet</span>
-                </button>
-              </div>
-            </div>
-
             {/* Merchant Receiving Address Row */}
-            <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-3.5 space-y-1.5">
+            <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-3 space-y-1.5">
               <div className="flex items-center justify-between text-xs text-zinc-400">
                 <span>{getTranslation(language, 'merchantWallet')} ({cryptoAsset}):</span>
                 <span className="text-[10px] text-zinc-500 font-mono">{assetConfig.network}</span>
@@ -493,12 +452,12 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                   value={txHashInput}
                   onChange={(e) => setTxHashInput(e.target.value)}
                   placeholder="Paste on-chain Tx Hash (0x... or BTC hash)"
-                  className="flex-1 px-3 py-2.5 bg-[#14161f] border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-colors"
+                  className="flex-1 px-3 py-2 bg-[#14161f] border border-zinc-700 rounded-xl text-xs font-mono text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => handleVerifyTransaction()}
-                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl transition-colors shrink-0 cursor-pointer"
+                  className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl transition-colors shrink-0 cursor-pointer"
                 >
                   {getTranslation(language, 'verifyPayment')}
                 </button>
@@ -580,7 +539,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
           </div>
         )}
 
-        {/* Failed / Fraud Detected State */}
+        {/* Failed State */}
         {step === 'failed' && (
           <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
             <div className="w-14 h-14 rounded-full bg-red-950/80 border-2 border-red-500 flex items-center justify-center text-red-400">
@@ -614,3 +573,4 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     </div>
   );
 };
+
