@@ -765,7 +765,7 @@ export async function scanForIncomingPayment(params: {
   isConfirmed?: boolean;
   blockNumber?: number;
 }> {
-  const { merchantWallet, expectedAsset, expectedAmountCrypto, sessionStartTimestamp, initialBalanceRaw = 0 } = params;
+  const { merchantWallet, expectedAsset, expectedAmountCrypto, sessionStartTimestamp } = params;
   const config = SUPPORTED_ASSETS[expectedAsset];
   const cleanAddr = merchantWallet.trim();
 
@@ -773,6 +773,8 @@ export async function scanForIncomingPayment(params: {
     return { isDetected: false };
   }
 
+  // Strict session timestamp threshold (allow max 15s clock grace period before invoice was created)
+  const minValidTimestampMs = Math.max(0, sessionStartTimestamp - 15000);
   const minRequiredAmount = expectedAmountCrypto * 0.985; // 1.5% max rounding tolerance
 
   try {
@@ -792,6 +794,12 @@ export async function scanForIncomingPayment(params: {
               const txs = await res.json();
               if (Array.isArray(txs) && txs.length > 0) {
                 for (const tx of txs) {
+                  // If confirmed, verify it occurred during the current payment session
+                  if (tx.status?.confirmed && tx.status?.block_time) {
+                    const txTimeMs = tx.status.block_time * 1000;
+                    if (txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+                  }
+
                   const matchedVout = tx.vout?.find(
                     (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
                   );
@@ -827,6 +835,12 @@ export async function scanForIncomingPayment(params: {
               const txs = await res.json();
               if (Array.isArray(txs) && txs.length > 0) {
                 for (const tx of txs) {
+                  // If confirmed, verify it occurred during current session
+                  if (tx.status?.confirmed && tx.status?.block_time) {
+                    const txTimeMs = tx.status.block_time * 1000;
+                    if (txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+                  }
+
                   const matchedVout = tx.vout?.find(
                     (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
                   );
@@ -862,6 +876,9 @@ export async function scanForIncomingPayment(params: {
               const data = await res.json();
               if (data?.txs && Array.isArray(data.txs)) {
                 for (const tx of data.txs) {
+                  const txTimeMs = (tx.time || 0) * 1000;
+                  if (txTimeMs > 0 && txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+
                   const matchedOut = tx.out?.find(
                     (o: any) => o.addr?.toLowerCase() === cleanAddr.toLowerCase()
                   );
@@ -914,8 +931,8 @@ export async function scanForIncomingPayment(params: {
           if (config.contractAddress) {
             const canonicalContract = config.contractAddress.toLowerCase();
             const polyScanUrl = isPolygon
-              ? `https://api.polygonscan.com/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`
-              : `https://api.etherscan.io/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`;
+              ? `https://api.polygonscan.com/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=15&sort=desc`
+              : `https://api.etherscan.io/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=15&sort=desc`;
 
             const psRes = await Promise.race([
               fetch(polyScanUrl),
@@ -926,6 +943,12 @@ export async function scanForIncomingPayment(params: {
               const data = await psRes.json();
               if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
                 for (const tx of data.result) {
+                  // STRICT: Filter out any transactions before current payment session
+                  const txTimestampMs = parseInt(tx.timeStamp || '0', 10) * 1000;
+                  if (txTimestampMs < minValidTimestampMs) {
+                    continue; // Skip historical transaction
+                  }
+
                   const toAddr = (tx.to || '').toLowerCase();
                   const contract = (tx.contractAddress || '').toLowerCase();
                   const tokenSymbol = (tx.tokenSymbol || '').toUpperCase();
@@ -960,8 +983,8 @@ export async function scanForIncomingPayment(params: {
           } else {
             // Native POL / MATIC or ETH txlist
             const polyScanNativeUrl = isPolygon
-              ? `https://api.polygonscan.com/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`
-              : `https://api.etherscan.io/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`;
+              ? `https://api.polygonscan.com/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=15&sort=desc`
+              : `https://api.etherscan.io/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=15&sort=desc`;
 
             const psRes = await Promise.race([
               fetch(polyScanNativeUrl),
@@ -972,6 +995,12 @@ export async function scanForIncomingPayment(params: {
               const data = await psRes.json();
               if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
                 for (const tx of data.result) {
+                  // STRICT: Filter out any transactions before current payment session
+                  const txTimestampMs = parseInt(tx.timeStamp || '0', 10) * 1000;
+                  if (txTimestampMs < minValidTimestampMs) {
+                    continue; // Skip historical transaction
+                  }
+
                   const toAddr = (tx.to || '').toLowerCase();
                   const isSuccess = tx.isError === '0' || tx.txreceipt_status === '1';
 
@@ -1017,6 +1046,12 @@ export async function scanForIncomingPayment(params: {
               const items = data.items || [];
               if (Array.isArray(items) && items.length > 0) {
                 for (const item of items) {
+                  // STRICT: Filter out any transfers before current payment session
+                  const itemTimeMs = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+                  if (itemTimeMs > 0 && itemTimeMs < minValidTimestampMs) {
+                    continue; // Skip historical transfer
+                  }
+
                   const toAddr = (item.to?.hash || item.to || '').toLowerCase();
                   const tokenAddr = (item.token?.address || '').toLowerCase();
                   const tokenSymbol = (item.token?.symbol || '').toUpperCase();
@@ -1065,6 +1100,12 @@ export async function scanForIncomingPayment(params: {
               const items = data.items || [];
               if (Array.isArray(items) && items.length > 0) {
                 for (const tx of items) {
+                  // STRICT: Filter out any transactions before current payment session
+                  const txTimeMs = tx.timestamp ? new Date(tx.timestamp).getTime() : 0;
+                  if (txTimeMs > 0 && txTimeMs < minValidTimestampMs) {
+                    continue; // Skip historical transaction
+                  }
+
                   const toAddr = (tx.to?.hash || tx.to || '').toLowerCase();
                   const isOk = tx.status === 'ok' || tx.result === 'success' || !tx.has_error_in_internal_txs;
 
@@ -1090,7 +1131,7 @@ export async function scanForIncomingPayment(params: {
       })()
     );
 
-    // Task 3: Direct EVM RPC Logs Query
+    // Task 3: Direct EVM RPC Logs Query (Limited strictly to very latest blocks)
     if (config.contractAddress) {
       evmPromises.push(
         (async () => {
@@ -1101,7 +1142,8 @@ export async function scanForIncomingPayment(params: {
             const logs = isPolygon
               ? await executeWithPolygonFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  const fromBlock = Math.max(0, currentBlock - 50);
+                  // Polygon has 2s block times; 6 blocks ≈ 12s
+                  const fromBlock = Math.max(0, currentBlock - 6);
                   return await provider.getLogs({
                     address: config.contractAddress,
                     topics: [transferTopic, null, paddedMerchant],
@@ -1111,7 +1153,8 @@ export async function scanForIncomingPayment(params: {
                 })
               : await executeWithEthereumFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  const fromBlock = Math.max(0, currentBlock - 30);
+                  // Ethereum has 12s block times; 2 blocks ≈ 24s
+                  const fromBlock = Math.max(0, currentBlock - 2);
                   return await provider.getLogs({
                     address: config.contractAddress,
                     topics: [transferTopic, null, paddedMerchant],
@@ -1145,7 +1188,7 @@ export async function scanForIncomingPayment(params: {
       );
     }
 
-    // Wait for all parallel EVM checks and only accept REAL transactions with valid hashes
+    // Wait for all parallel EVM checks and only accept REAL NEW transactions with valid hashes
     const results = await Promise.allSettled(evmPromises);
     for (const res of results) {
       if (res.status === 'fulfilled' && res.value && res.value.isDetected && res.value.txHash) {
