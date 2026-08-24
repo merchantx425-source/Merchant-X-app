@@ -1,6 +1,7 @@
 import React from 'react';
 import { CryptoAsset, AssetBalance } from '../types/merchant';
 import { SUPPORTED_ASSETS, ASSET_ORDER } from '../config/constants';
+import { getTranslation } from '../config/i18n';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface AssetSelectorProps {
@@ -9,6 +10,7 @@ interface AssetSelectorProps {
   balances: Record<CryptoAsset, AssetBalance>;
   onRefreshBalances: () => void;
   isRefreshing: boolean;
+  language?: string;
 }
 
 export const AssetSelector: React.FC<AssetSelectorProps> = ({
@@ -17,12 +19,13 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
   balances,
   onRefreshBalances,
   isRefreshing,
+  language = 'en',
 }) => {
   return (
     <div className="w-full">
       <div className="flex items-center justify-between mb-2 px-1">
         <span className="text-[11px] font-bold tracking-wider uppercase text-zinc-400">
-          Payment Asset
+          {getTranslation(language, 'paymentAsset')}
         </span>
         <button
           type="button"
@@ -32,7 +35,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
           title="Refresh on-chain balances"
         >
           <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin text-amber-400' : ''}`} />
-          <span className="hidden sm:inline">Sync Balances</span>
+          <span className="hidden sm:inline">{getTranslation(language, 'syncBalances')}</span>
         </button>
       </div>
 

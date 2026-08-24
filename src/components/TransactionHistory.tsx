@@ -2,24 +2,22 @@ import React, { useState } from 'react';
 import { TransactionRecord, CryptoAsset, TxStatus } from '../types/merchant';
 import { SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { getTranslation } from '../config/i18n';
 import {
   Search,
-  Filter,
-  Download,
-  ExternalLink,
   Receipt as ReceiptIcon,
   CheckCircle2,
   Clock,
   AlertCircle,
   FileSpreadsheet,
-  Calendar,
-  Wallet,
+  ExternalLink,
 } from 'lucide-react';
 
 interface TransactionHistoryProps {
   transactions: TransactionRecord[];
   onSelectReceipt: (tx: TransactionRecord) => void;
   onClearHistory?: () => void;
+  language?: string;
 }
 
 type FilterOption = 'ALL' | TxStatus | CryptoAsset;
@@ -27,6 +25,7 @@ type FilterOption = 'ALL' | TxStatus | CryptoAsset;
 export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   transactions,
   onSelectReceipt,
+  language = 'en',
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('ALL');
@@ -108,10 +107,10 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   };
 
   const filterTabs: { label: string; value: FilterOption }[] = [
-    { label: 'All', value: 'ALL' },
-    { label: 'Paid', value: 'paid' },
-    { label: 'Pending', value: 'pending' },
-    { label: 'Failed', value: 'failed' },
+    { label: getTranslation(language, 'all'), value: 'ALL' },
+    { label: getTranslation(language, 'paid'), value: 'paid' },
+    { label: getTranslation(language, 'pending'), value: 'pending' },
+    { label: getTranslation(language, 'failed'), value: 'failed' },
     { label: 'BTC', value: 'BTC' },
     { label: 'ETH', value: 'ETH' },
     { label: 'USDT', value: 'USDT' },
@@ -125,7 +124,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
-            Transaction History
+            {getTranslation(language, 'txHistory')}
           </h1>
           <p className="text-xs text-zinc-400">
             {transactions.length} total on-chain settlement record{transactions.length === 1 ? '' : 's'}
@@ -141,7 +140,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             className="flex items-center gap-1.5 py-2 px-3 bg-[#181a24] hover:bg-[#202330] disabled:opacity-40 disabled:pointer-events-none border border-zinc-700/80 rounded-xl text-xs font-semibold text-zinc-200 transition-colors cursor-pointer"
           >
             <FileSpreadsheet className="w-4 h-4 text-amber-400" />
-            <span>Export CSV</span>
+            <span>{getTranslation(language, 'exportTx')}</span>
           </button>
         </div>
       </div>
@@ -155,7 +154,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by reference, hash, amount, or asset..."
+            placeholder={getTranslation(language, 'searchPlaceholder')}
             className="w-full bg-[#12141a] border border-zinc-800 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 transition-colors"
           />
         </div>
@@ -186,9 +185,9 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             <ReceiptIcon className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-sm font-semibold text-zinc-300">No transactions yet</h3>
+            <h3 className="text-sm font-semibold text-zinc-300">{getTranslation(language, 'noTxYet')}</h3>
             <p className="text-xs text-zinc-500 mt-0.5 max-w-xs">
-              Completed and verified on-chain payments will be stored here automatically.
+              {getTranslation(language, 'noTxSub')}
             </p>
           </div>
         </div>
@@ -268,7 +267,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
               <h3 className="text-base font-bold font-display text-white">Transaction Details</h3>
               <button
                 onClick={() => setInspectedTx(null)}
-                className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800"
+                className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 cursor-pointer"
               >
                 ✕
               </button>
@@ -276,7 +275,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 
             <div className="py-4 space-y-3 text-xs">
               <div className="flex items-center justify-between p-3 bg-zinc-900/80 rounded-xl">
-                <span className="text-zinc-400">Status</span>
+                <span className="text-zinc-400">{getTranslation(language, 'status')}</span>
                 <span className="font-bold uppercase text-emerald-400">{inspectedTx.status} ✓</span>
               </div>
               <div className="flex items-center justify-between">
@@ -284,7 +283,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                 <span className="font-mono text-white">{inspectedTx.id}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Reference:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'reference')}:</span>
                 <span className="font-mono text-amber-400 font-semibold">{inspectedTx.reference}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -305,30 +304,30 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                 <span className="text-white">{inspectedTx.network}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Merchant Wallet:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'merchantWallet')}:</span>
                 <span className="font-mono text-zinc-300">{formatAddress(inspectedTx.merchantWallet, 5)}</span>
               </div>
               {inspectedTx.customerWallet && (
                 <div className="flex items-center justify-between">
-                  <span className="text-zinc-400">Customer Wallet:</span>
+                  <span className="text-zinc-400">{getTranslation(language, 'customerWallet')}:</span>
                   <span className="font-mono text-zinc-300">{formatAddress(inspectedTx.customerWallet, 5)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Date / Time:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'date')} / {getTranslation(language, 'time')}:</span>
                 <span className="text-zinc-300">{inspectedTx.formattedDate} at {inspectedTx.formattedTime}</span>
               </div>
 
               {inspectedTx.txHash && (
                 <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                  <span className="text-zinc-400">Blockchain Explorer:</span>
+                  <span className="text-zinc-400">{getTranslation(language, 'txHash')}:</span>
                   <a
                     href={`${EXPLORER_URLS[inspectedTx.network]}/tx/${inspectedTx.txHash}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1"
                   >
-                    <span>View On-Chain</span>
+                    <span>{formatAddress(inspectedTx.txHash, 6)}</span>
                     <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
@@ -346,7 +345,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                 className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <ReceiptIcon className="w-4 h-4" />
-                <span>Open Official Receipt</span>
+                <span>{getTranslation(language, 'officialReceipt')}</span>
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { AppSettings, WalletState, FiatCurrency, AppTheme } from '../types/merch
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
 import { isBiometricAvailable, registerBiometricPasskey } from '../services/biometricService';
+import { getTranslation } from '../config/i18n';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { TermsOfServiceModal } from './TermsOfServiceModal';
 import { MerchantXLogo } from './MerchantXLogo';
@@ -13,17 +14,12 @@ import {
   Sun,
   Moon,
   Laptop,
-  Globe,
   Fingerprint,
   Share2,
   Shield,
   FileText,
-  ExternalLink,
-  Check,
   ChevronRight,
   AlertCircle,
-  Volume2,
-  VolumeX,
 } from 'lucide-react';
 
 interface SettingsProps {
@@ -50,6 +46,8 @@ export const Settings: React.FC<SettingsProps> = ({
   const [copiedShare, setCopiedShare] = useState(false);
   const [biometricSupported, setBiometricSupported] = useState<boolean | null>(null);
   const [biometricError, setBiometricError] = useState<string | null>(null);
+
+  const lang = settings.language;
 
   useEffect(() => {
     isBiometricAvailable().then((res) => setBiometricSupported(res));
@@ -97,7 +95,9 @@ export const Settings: React.FC<SettingsProps> = ({
     <div className="w-full max-w-2xl mx-auto space-y-6 pb-24 px-3 sm:px-4 animate-in fade-in duration-200">
       {/* Header */}
       <div className="pt-2">
-        <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">Settings</h1>
+        <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
+          {getTranslation(lang, 'settings')}
+        </h1>
         <p className="text-xs text-zinc-400">Terminal preferences, security, and wallet routing</p>
       </div>
 
@@ -115,7 +115,7 @@ export const Settings: React.FC<SettingsProps> = ({
               <div>
                 <div className="text-xs text-zinc-400">Connected Wallet</div>
                 <div className="font-semibold text-sm text-white">
-                  {walletState.isConnected ? walletState.walletProvider || 'Active Terminal' : 'Not Connected'}
+                  {walletState.isConnected ? walletState.walletProvider || 'Active Terminal' : getTranslation(lang, 'offline')}
                 </div>
               </div>
             </div>
@@ -126,7 +126,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   : 'bg-zinc-800 text-zinc-400'
               }`}
             >
-              {walletState.isConnected ? 'Connected' : 'Offline'}
+              {walletState.isConnected ? getTranslation(lang, 'connected') : getTranslation(lang, 'offline')}
             </span>
           </div>
 
@@ -152,7 +152,7 @@ export const Settings: React.FC<SettingsProps> = ({
               onClick={onOpenWalletModal}
               className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-all cursor-pointer shadow-sm"
             >
-              {walletState.isConnected ? 'Reconnect Wallet' : 'Connect Wallet'}
+              {walletState.isConnected ? getTranslation(lang, 'reconnect') : getTranslation(lang, 'connectWallet')}
             </button>
             {walletState.isConnected && (
               <button
@@ -160,7 +160,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 onClick={onDisconnectWallet}
                 className="px-4 py-2.5 bg-red-950/30 hover:bg-red-900/40 border border-red-800/50 text-red-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
               >
-                Disconnect
+                {getTranslation(lang, 'disconnect')}
               </button>
             )}
           </div>
@@ -181,8 +181,8 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <Receipt className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">Transaction History</div>
-                <div className="text-xs text-zinc-400">View and inspect all on-chain settlements</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'txHistory')}</div>
+                <div className="text-xs text-zinc-400">{getTranslation(lang, 'txHistorySub')}</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />
@@ -196,8 +196,8 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">Export Transactions</div>
-                <div className="text-xs text-zinc-400">Download CSV export for accounting and taxes</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'exportTx')}</div>
+                <div className="text-xs text-zinc-400">{getTranslation(lang, 'exportTxSub')}</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />
@@ -211,7 +211,7 @@ export const Settings: React.FC<SettingsProps> = ({
           Appearance
         </h2>
         <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-3">
-          <div className="text-xs text-zinc-300 font-semibold">Theme</div>
+          <div className="text-xs text-zinc-300 font-semibold">{getTranslation(lang, 'theme')}</div>
           <div className="grid grid-cols-3 gap-2">
             {(['dark', 'light', 'system'] as AppTheme[]).map((mode) => (
               <button
@@ -231,7 +231,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 ) : (
                   <Laptop className="w-4 h-4" />
                 )}
-                <span>{mode}</span>
+                <span>{getTranslation(lang, mode)}</span>
               </button>
             ))}
           </div>
@@ -246,7 +246,7 @@ export const Settings: React.FC<SettingsProps> = ({
         <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-4">
           <div>
             <label className="block text-xs text-zinc-300 font-semibold mb-1.5">
-              Default Display Currency
+              {getTranslation(lang, 'displayCurrency')}
             </label>
             <select
               value={settings.fiatCurrency}
@@ -263,7 +263,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
           <div>
             <label className="block text-xs text-zinc-300 font-semibold mb-1.5">
-              Language
+              {getTranslation(lang, 'language')}
             </label>
             <select
               value={settings.language}
@@ -281,7 +281,7 @@ export const Settings: React.FC<SettingsProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-800/70">
             <div>
               <label className="block text-[11px] text-zinc-400 font-medium mb-1">
-                Merchant Store Name
+                {getTranslation(lang, 'merchantName')}
               </label>
               <input
                 type="text"
@@ -292,7 +292,7 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
             <div>
               <label className="block text-[11px] text-zinc-400 font-medium mb-1">
-                Store Location / Subtitle
+                {getTranslation(lang, 'storeLocation')}
               </label>
               <input
                 type="text"
@@ -317,9 +317,9 @@ export const Settings: React.FC<SettingsProps> = ({
                 <Fingerprint className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">Use biometric authentication</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'biometricAuth')}</div>
                 <div className="text-xs text-zinc-400 mt-0.5">
-                  Use your device&apos;s supported biometric/passkey authentication to protect Merchant X.
+                  {getTranslation(lang, 'biometricSub')}
                 </div>
               </div>
             </div>
@@ -369,9 +369,9 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <Share2 className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">Share Merchant X</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'shareApp')}</div>
                 <div className="text-xs text-zinc-400">
-                  {copiedShare ? 'Link copied to clipboard!' : 'Share POS terminal link with staff or merchants'}
+                  {copiedShare ? 'Link copied to clipboard!' : getTranslation(lang, 'shareSub')}
                 </div>
               </div>
             </div>
@@ -386,8 +386,8 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <Shield className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">Privacy Policy</div>
-                <div className="text-xs text-zinc-400">Non-custodial transparency and security notice</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'privacyPolicy')}</div>
+                <div className="text-xs text-zinc-400">{getTranslation(lang, 'privacySub')}</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />
@@ -401,8 +401,8 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <FileText className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">Terms of Service</div>
-                <div className="text-xs text-zinc-400">Merchant operating guidelines and blockchain settlement</div>
+                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'termsOfService')}</div>
+                <div className="text-xs text-zinc-400">{getTranslation(lang, 'termsSub')}</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />

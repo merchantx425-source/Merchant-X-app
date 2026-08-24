@@ -2,8 +2,9 @@ import React, { useRef } from 'react';
 import { TransactionRecord } from '../types/merchant';
 import { SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
-import { X, Printer, Download, Share2, Check, ExternalLink, ShieldCheck } from 'lucide-react';
+import { X, Printer, Download, Share2, Check, ExternalLink } from 'lucide-react';
 
 interface ReceiptModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface ReceiptModalProps {
   transaction: TransactionRecord | null;
   merchantName?: string;
   merchantLocation?: string;
+  language?: string;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
@@ -19,6 +21,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   transaction,
   merchantName = 'Merchant X Store #1',
   merchantLocation = 'Lagos, Nigeria',
+  language = 'en',
 }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [copiedLink, setCopiedLink] = React.useState(false);
@@ -110,10 +113,12 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
       <div className="relative w-full max-w-md bg-[#13151b] border border-purple-900/30 rounded-3xl p-6 shadow-2xl text-white overflow-hidden max-h-[95vh] overflow-y-auto">
         {/* Top Actions */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80 no-print">
-          <span className="text-xs uppercase font-bold tracking-wider text-zinc-400">Official Receipt</span>
+          <span className="text-xs uppercase font-bold tracking-wider text-zinc-400">
+            {getTranslation(language, 'officialReceipt')}
+          </span>
           <button
             onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors"
+            className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -132,7 +137,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
               MERCHANT <span className="text-amber-400">X</span>
             </h1>
             <div className="text-[11px] font-semibold text-zinc-400 uppercase tracking-widest mt-0.5">
-              Payment Receipt
+              {getTranslation(language, 'officialReceipt')}
             </div>
             <div className="text-[10px] text-zinc-400 mt-1">
               {merchantName} • {merchantLocation}
@@ -142,7 +147,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
           {/* Status Badge */}
           <div className="py-3 flex flex-col items-center justify-center text-center border-b border-dashed border-zinc-700">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/50 text-emerald-400 text-xs font-extrabold tracking-wider uppercase">
-              <Check className="w-3.5 h-3.5" /> PAID ✓
+              <Check className="w-3.5 h-3.5" /> {getTranslation(language, 'paymentApproved')}
             </div>
             <div className="text-3xl font-extrabold font-display text-white mt-2">
               {formattedFiat}
@@ -155,11 +160,11 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
           {/* Key-value Data Rows */}
           <div className="py-3.5 space-y-2 text-xs border-b border-dashed border-zinc-700">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Reference:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'reference')}:</span>
               <span className="font-mono font-semibold text-zinc-200">{transaction.reference}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Crypto Asset:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'paymentAsset')}:</span>
               <span className="font-semibold text-amber-400">{transaction.cryptoAsset}</span>
             </div>
             <div className="flex items-center justify-between">
@@ -167,19 +172,19 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
               <span className="font-semibold text-zinc-200">{transaction.network}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Merchant Wallet:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'merchantWallet')}:</span>
               <span className="font-mono text-zinc-300">{formatAddress(transaction.merchantWallet, 4)}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Date:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'date')}:</span>
               <span className="text-zinc-300">{transaction.formattedDate}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">Time:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'time')}:</span>
               <span className="text-zinc-300">{transaction.formattedTime}</span>
             </div>
             <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
-              <span className="text-zinc-400">Transaction Hash:</span>
+              <span className="text-zinc-400">{getTranslation(language, 'txHash')}:</span>
               {transaction.txHash ? (
                 <a
                   href={`${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash}`}
@@ -199,7 +204,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
           {/* Receipt Footer */}
           <div className="pt-3 text-center space-y-1">
             <div className="text-[10px] text-zinc-400 uppercase tracking-wider font-mono">
-              Cryptographically Verified On-Chain
+              {getTranslation(language, 'verifiedOnChain')}
             </div>
             <div className="text-[9px] text-zinc-500">
               © 2026 Merchant X • Non-Custodial Terminal
@@ -215,7 +220,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Printer className="w-4 h-4 text-amber-400" />
-            <span>Print</span>
+            <span>{getTranslation(language, 'print')}</span>
           </button>
           <button
             type="button"
@@ -223,7 +228,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Download className="w-4 h-4 text-amber-400" />
-            <span>Download</span>
+            <span>{getTranslation(language, 'download')}</span>
           </button>
           <button
             type="button"
@@ -231,7 +236,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Share2 className="w-4 h-4 text-amber-400" />
-            <span>{copiedLink ? 'Copied!' : 'Share'}</span>
+            <span>{copiedLink ? 'Copied!' : getTranslation(language, 'share')}</span>
           </button>
         </div>
       </div>

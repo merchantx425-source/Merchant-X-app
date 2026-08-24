@@ -18,6 +18,7 @@ import {
   fetchLiveCryptoRates,
   fetchRealAssetBalance,
 } from './services/blockchainService';
+import { disconnectWalletKit } from './config/appkit';
 import { LoadingScreen } from './components/LoadingScreen';
 import { POS } from './components/POS';
 import { TransactionHistory } from './components/TransactionHistory';
@@ -94,10 +95,10 @@ export default function App() {
 
   // 7. Live Rates & Balances State
   const [cryptoInFiatRates, setCryptoInFiatRates] = useState<Record<CryptoAsset, number>>({
-    BTC: 100000000,
-    ETH: 4900000,
-    USDT: 1560,
-    POL: 655,
+    BTC: 96000000,
+    ETH: 4500000,
+    USDT: 1540,
+    POL: 620,
     VERSE: 0.28,
   });
 
@@ -171,7 +172,12 @@ export default function App() {
     }
   };
 
-  const handleDisconnectWallet = () => {
+  const handleDisconnectWallet = async () => {
+    try {
+      await disconnectWalletKit();
+    } catch {
+      // Ignore
+    }
     const updated: WalletState = {
       evmAddress: null,
       btcAddress: null,
@@ -339,7 +345,19 @@ export default function App() {
   // Export Transactions helper for Settings screen
   const handleExportTransactions = () => {
     if (transactions.length === 0) return;
-    const headers = ['ID', 'Reference', 'Date', 'Time', 'Status', 'Fiat Amount', 'Crypto Amount', 'Asset', 'Network', 'Merchant Wallet', 'Tx Hash'];
+    const headers = [
+      'ID',
+      'Reference',
+      'Date',
+      'Time',
+      'Status',
+      'Fiat Amount',
+      'Crypto Amount',
+      'Asset',
+      'Network',
+      'Merchant Wallet',
+      'Tx Hash',
+    ];
     const rows = transactions.map((t) => [
       t.id,
       t.reference,
@@ -353,7 +371,9 @@ export default function App() {
       t.merchantWallet,
       t.txHash || '',
     ]);
-    const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const csv =
+      'data:text/csv;charset=utf-8,' +
+      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
     const link = document.createElement('a');
     link.href = encodeURI(csv);
     link.download = `merchant_x_transactions_${Date.now()}.csv`;
@@ -365,8 +385,12 @@ export default function App() {
   // Current merchant receiving address for selected asset
   const currentSelectedMerchantWallet =
     SUPPORTED_ASSETS[selectedAsset].networkFamily === 'bitcoin'
-      ? walletState.btcAddress || settings.customBtcReceivingAddress || 'bc1qmerchantx0000000000000000000000000000'
-      : walletState.evmAddress || settings.customEvmReceivingAddress || '0x0000000000000000000000000000000000000000';
+      ? walletState.btcAddress ||
+        settings.customBtcReceivingAddress ||
+        'bc1qmerchantx0000000000000000000000000000'
+      : walletState.evmAddress ||
+        settings.customEvmReceivingAddress ||
+        '0x0000000000000000000000000000000000000000';
 
   const numFiat = parseFloat(amountInput || '0') || 0;
   const cryptoRate = cryptoInFiatRates[selectedAsset] || 1;
@@ -405,6 +429,7 @@ export default function App() {
           <TransactionHistory
             transactions={transactions}
             onSelectReceipt={(tx) => setActiveReceiptTx(tx)}
+            language={settings.language}
           />
         )}
 
@@ -425,6 +450,7 @@ export default function App() {
       <Navbar
         currentTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
+        language={settings.language}
       />
 
       {/* 4. Wallet Connection Modal */}
@@ -447,6 +473,7 @@ export default function App() {
         cryptoRate={cryptoRate}
         merchantWallet={currentSelectedMerchantWallet}
         onPaymentSuccess={handlePaymentSuccess}
+        language={settings.language}
       />
 
       {/* 6. Official Merchant X Receipt Modal */}
@@ -456,6 +483,7 @@ export default function App() {
         transaction={activeReceiptTx}
         merchantName={settings.merchantName}
         merchantLocation={settings.merchantLocation}
+        language={settings.language}
       />
     </div>
   );

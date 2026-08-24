@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { CryptoAsset, FiatCurrency, TransactionRecord, BlockchainNetwork } from '../types/merchant';
+import { CryptoAsset, FiatCurrency, TransactionRecord } from '../types/merchant';
 import { SUPPORTED_ASSETS, SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
 import { verifyBlockchainTransaction, formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
 import {
   X,
@@ -10,12 +11,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  Loader2,
   Copy,
   Check,
   ArrowUpRight,
   Wallet,
-  FileText,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -29,6 +28,7 @@ interface ChargeFlowModalProps {
   cryptoRate: number;
   merchantWallet: string;
   onPaymentSuccess: (txRecord: TransactionRecord) => void;
+  language?: string;
 }
 
 type FlowStep = 'awaiting_payment' | 'verifying' | 'approved' | 'failed';
@@ -43,15 +43,14 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   cryptoRate,
   merchantWallet,
   onPaymentSuccess,
+  language = 'en',
 }) => {
   const [step, setStep] = useState<FlowStep>('awaiting_payment');
   const [txHashInput, setTxHashInput] = useState('');
   const [copiedAddr, setCopiedAddr] = useState(false);
-  const [copiedAmount, setCopiedAmount] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [timeLeft, setTimeLeft] = useState(900); // 15 minute payment invoice window
   const [verifiedTx, setVerifiedTx] = useState<TransactionRecord | null>(null);
-  const [isAutoChecking, setIsAutoChecking] = useState(false);
 
   const assetConfig = SUPPORTED_ASSETS[cryptoAsset];
   const fiatConfig = SUPPORTED_FIAT[fiatCurrency];
@@ -75,16 +74,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const formattedCrypto = `${formatCryptoAmount(amountCrypto, cryptoAsset)} ${cryptoAsset}`;
 
   // Copy helpers
-  const handleCopy = (text: string, type: 'addr' | 'amount') => {
+  const handleCopy = (text: string) => {
     if (navigator.clipboard) {
       navigator.clipboard.writeText(text);
-      if (type === 'addr') {
-        setCopiedAddr(true);
-        setTimeout(() => setCopiedAddr(false), 2000);
-      } else {
-        setCopiedAmount(true);
-        setTimeout(() => setCopiedAmount(false), 2000);
-      }
+      setCopiedAddr(true);
+      setTimeout(() => setCopiedAddr(false), 2000);
     }
   };
 
@@ -201,7 +195,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800/60 transition-colors"
+            className="p-2 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800/60 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -212,7 +206,9 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
           <div className="space-y-4 py-4">
             {/* Payment Summary Box */}
             <div className="bg-[#181a23] border border-zinc-700/60 rounded-2xl p-4 text-center relative overflow-hidden">
-              <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">Total Amount Due</div>
+              <div className="text-xs text-zinc-400 uppercase tracking-wider font-semibold">
+                {getTranslation(language, 'totalDue')}
+              </div>
               <div className="text-3xl sm:text-4xl font-extrabold font-display text-white mt-1">
                 {formattedFiat}
               </div>
@@ -223,11 +219,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               {/* Countdown badge */}
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-900/80 border border-zinc-800 text-[11px] text-zinc-400 mt-3 font-mono">
                 <Clock className="w-3 h-3 text-amber-400" />
-                <span>Expires in {formattedTimeLeft}</span>
+                <span>{getTranslation(language, 'expiresIn')} {formattedTimeLeft}</span>
               </div>
             </div>
 
-            {/* Merchant Receiving Address Details (Note: per guidelines, no custom QR component inside Merchant X, wallet app handles it) */}
+            {/* Merchant Receiving Address Details */}
             <div className="space-y-2.5">
               <div className="p-3 bg-[#0d0e14] border border-zinc-800 rounded-xl space-y-2">
                 <div className="flex items-center justify-between text-xs">
@@ -235,14 +231,14 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                   <span className="font-semibold text-white">{assetConfig.network}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-400">Crypto Asset:</span>
+                  <span className="text-zinc-400">{getTranslation(language, 'paymentAsset')}:</span>
                   <span className="font-semibold text-amber-400">{cryptoAsset} ({assetConfig.name})</span>
                 </div>
                 <div className="flex items-center justify-between text-xs pt-1 border-t border-zinc-800/70">
-                  <span className="text-zinc-400">Merchant Receiving Address:</span>
+                  <span className="text-zinc-400">{getTranslation(language, 'merchantWallet')}:</span>
                   <button
                     type="button"
-                    onClick={() => handleCopy(merchantWallet, 'addr')}
+                    onClick={() => handleCopy(merchantWallet)}
                     className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-mono text-[11px] cursor-pointer"
                   >
                     <span>{formatAddress(merchantWallet, 5)}</span>
@@ -264,7 +260,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               className="w-full py-3.5 bg-[#1f2230] hover:bg-[#272b3c] border border-amber-500/40 hover:border-amber-400 rounded-2xl flex items-center justify-center gap-2 text-sm font-bold text-amber-300 hover:text-amber-200 transition-all cursor-pointer shadow-md"
             >
               <Wallet className="w-4 h-4" />
-              <span>Launch Wallet / Payment App</span>
+              <span>{getTranslation(language, 'launchWallet')}</span>
               <ArrowUpRight className="w-4 h-4" />
             </button>
 
@@ -289,7 +285,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                   onClick={() => handleVerifyTransaction()}
                   className="px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-all shrink-0 cursor-pointer shadow-sm"
                 >
-                  Verify On-Chain
+                  {getTranslation(language, 'verifyOnChain')}
                 </button>
               </div>
             </div>
@@ -313,7 +309,9 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               </div>
             </div>
             <div>
-              <h3 className="text-lg font-bold font-display text-white">Verifying Blockchain Settlement</h3>
+              <h3 className="text-lg font-bold font-display text-white">
+                {getTranslation(language, 'verifyingSettlement')}
+              </h3>
               <p className="text-xs text-zinc-400 mt-1 max-w-xs mx-auto">
                 Confirming cryptographic signature, amount, recipient address, and block status on{' '}
                 <span className="text-amber-400 font-semibold">{assetConfig.network}</span>...
@@ -334,7 +332,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
 
             <div>
               <div className="text-xs uppercase tracking-widest text-emerald-400 font-bold">
-                PAYMENT APPROVED ✓
+                {getTranslation(language, 'paymentApproved')}
               </div>
               <h3 className="text-2xl font-extrabold font-display text-white mt-1">
                 {formattedFiat}
@@ -347,21 +345,21 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
             {/* Transaction Verification Details */}
             <div className="w-full bg-[#0d0e14] border border-emerald-900/40 rounded-2xl p-4 text-left space-y-2 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Reference:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'reference')}:</span>
                 <span className="font-mono font-semibold text-white">{verifiedTx.reference}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Status:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'status')}:</span>
                 <span className="text-emerald-400 font-bold flex items-center gap-1">
-                  <Check className="w-3.5 h-3.5" /> PAID ✓
+                  <Check className="w-3.5 h-3.5" /> {getTranslation(language, 'paid')} ✓
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Merchant Wallet:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'merchantWallet')}:</span>
                 <span className="font-mono text-zinc-300">{formatAddress(verifiedTx.merchantWallet, 5)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Customer Wallet:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'customerWallet')}:</span>
                 <span className="font-mono text-zinc-300">{formatAddress(verifiedTx.customerWallet || 'Verified On-Chain', 5)}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -369,11 +367,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 <span className="font-mono text-zinc-300">{verifiedTx.blockNumber || 'Confirmed'}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Date & Time:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'date')} & {getTranslation(language, 'time')}:</span>
                 <span className="text-zinc-300">{verifiedTx.formattedDate} {verifiedTx.formattedTime}</span>
               </div>
               <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
-                <span className="text-zinc-400">Transaction:</span>
+                <span className="text-zinc-400">{getTranslation(language, 'txHash')}:</span>
                 <a
                   href={`${EXPLORER_URLS[verifiedTx.network]}/tx/${verifiedTx.txHash}`}
                   target="_blank"

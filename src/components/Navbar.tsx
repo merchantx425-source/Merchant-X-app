@@ -1,14 +1,21 @@
 import React from 'react';
 import { AppTab } from '../types/merchant';
+import { getTranslation } from '../config/i18n';
 import { LayoutGrid, Receipt, Settings as SettingsIcon } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: AppTab;
   onTabChange: (tab: AppTab) => void;
   pendingCount?: number;
+  language?: string;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentTab, onTabChange, pendingCount = 0 }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  currentTab,
+  onTabChange,
+  pendingCount = 0,
+  language = 'en',
+}) => {
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0d0e14]/95 backdrop-blur-lg border-t border-purple-950/40 px-4 py-2 sm:py-2.5 max-w-md mx-auto no-print">
       <div className="flex items-center justify-around">
@@ -28,7 +35,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onTabChange, pending
               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full" />
             )}
           </div>
-          <span className="text-[10px] tracking-wide uppercase font-medium">POS</span>
+          <span className="text-[10px] tracking-wide uppercase font-medium">
+            {getTranslation(language, 'pos')}
+          </span>
         </button>
 
         {/* Transactions Tab */}
@@ -52,7 +61,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onTabChange, pending
               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full" />
             )}
           </div>
-          <span className="text-[10px] tracking-wide uppercase font-medium">History</span>
+          <span className="text-[10px] tracking-wide uppercase font-medium">
+            {getTranslation(language, 'history')}
+          </span>
         </button>
 
         {/* Settings Tab */}
@@ -71,7 +82,9 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onTabChange, pending
               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 bg-amber-400 rounded-full" />
             )}
           </div>
-          <span className="text-[10px] tracking-wide uppercase font-medium">Settings</span>
+          <span className="text-[10px] tracking-wide uppercase font-medium">
+            {getTranslation(language, 'settings')}
+          </span>
         </button>
       </div>
     </nav>

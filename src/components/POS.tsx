@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
-import { CryptoAsset, FiatCurrency, AssetBalance, WalletState, AppSettings } from '../types/merchant';
+import React, { useMemo } from 'react';
+import { CryptoAsset, AssetBalance, WalletState, AppSettings } from '../types/merchant';
 import { SUPPORTED_FIAT, SUPPORTED_ASSETS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
 import { AssetSelector } from './AssetSelector';
 import { NumericKeypad } from './NumericKeypad';
-import { Settings as SettingsIcon, Wallet, RefreshCw, AlertCircle } from 'lucide-react';
+import { Settings as SettingsIcon, Wallet } from 'lucide-react';
 
 interface POSProps {
   amountInput: string;
@@ -43,6 +44,7 @@ export const POS: React.FC<POSProps> = ({
   settings,
 }) => {
   const fiatConfig = SUPPORTED_FIAT[settings.fiatCurrency];
+  const lang = settings.language;
 
   // Numeric amount calculation
   const numericAmount = useMemo(() => {
@@ -72,15 +74,17 @@ export const POS: React.FC<POSProps> = ({
     return numericAmount / rateInFiat;
   }, [numericAmount, selectedAsset, cryptoInFiatRates]);
 
+  const chargeLabel = getTranslation(lang, 'charge');
+
   const chargeButtonLabel = useMemo(() => {
     if (numericAmount === 0) {
-      return `CHARGE ${fiatConfig.symbol}0`;
+      return `${chargeLabel} ${fiatConfig.symbol}0`;
     }
-    return `CHARGE ${fiatConfig.symbol}${numericAmount.toLocaleString('en-US', {
+    return `${chargeLabel} ${fiatConfig.symbol}${numericAmount.toLocaleString('en-US', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     })}`;
-  }, [numericAmount, fiatConfig.symbol]);
+  }, [numericAmount, fiatConfig.symbol, chargeLabel]);
 
   const isChargeDisabled = numericAmount <= 0;
 
@@ -114,8 +118,8 @@ export const POS: React.FC<POSProps> = ({
                   ? formatAddress(walletState.evmAddress, 3)
                   : walletState.btcAddress
                   ? formatAddress(walletState.btcAddress, 3)
-                  : 'Connected'
-                : 'Connect'}
+                  : getTranslation(lang, 'connected')
+                : getTranslation(lang, 'connect')}
             </span>
           </button>
 
@@ -133,7 +137,7 @@ export const POS: React.FC<POSProps> = ({
       {/* 2. Amount Display Area (Large & Centered) */}
       <section className="flex flex-col items-center justify-center py-4 sm:py-6 text-center my-auto">
         <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-1 font-mono">
-          Enter Amount
+          {getTranslation(lang, 'enterAmount')}
         </div>
 
         {/* Large Amount */}
@@ -159,6 +163,7 @@ export const POS: React.FC<POSProps> = ({
           balances={balances}
           onRefreshBalances={onRefreshBalances}
           isRefreshing={isRefreshingBalances}
+          language={lang}
         />
       </section>
 
