@@ -811,27 +811,11 @@ export async function scanForIncomingPayment(params: {
           } catch {}
           return null;
         })(),
-
-        // D. Bitcoin Balance Delta Check
-        (async () => {
-          try {
-            const currentBtcBal = await fetchRealAssetBalance('BTC', cleanAddr);
-            if (currentBtcBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
-              return {
-                isDetected: true,
-                txHash: `btc_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`,
-                actualAmount: currentBtcBal.balanceRaw - initialBalanceRaw,
-                isConfirmed: true,
-              };
-            }
-          } catch {}
-          return null;
-        })(),
       ];
 
       const results = await Promise.allSettled(btcPromises);
       for (const res of results) {
-        if (res.status === 'fulfilled' && res.value && res.value.isDetected) {
+        if (res.status === 'fulfilled' && res.value && res.value.isDetected && res.value.txHash) {
           return res.value;
         }
       }
@@ -1043,7 +1027,7 @@ export async function scanForIncomingPayment(params: {
             const logs = isPolygon
               ? await executeWithPolygonFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  const fromBlock = Math.max(0, currentBlock - 40);
+                  const fromBlock = Math.max(0, currentBlock - 50);
                   return await provider.getLogs({
                     address: config.contractAddress,
                     topics: [transferTopic, null, paddedMerchant],
@@ -1053,7 +1037,7 @@ export async function scanForIncomingPayment(params: {
                 })
               : await executeWithEthereumFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  const fromBlock = Math.max(0, currentBlock - 20);
+                  const fromBlock = Math.max(0, currentBlock - 30);
                   return await provider.getLogs({
                     address: config.contractAddress,
                     topics: [transferTopic, null, paddedMerchant],
@@ -1087,28 +1071,10 @@ export async function scanForIncomingPayment(params: {
       );
     }
 
-    // Task 4: Real On-Chain Balance Delta Check
-    evmPromises.push(
-      (async () => {
-        try {
-          const currentBal = await fetchRealAssetBalance(expectedAsset, cleanAddr);
-          if (currentBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
-            return {
-              isDetected: true,
-              txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-              actualAmount: currentBal.balanceRaw - initialBalanceRaw,
-              isConfirmed: true,
-            };
-          }
-        } catch {}
-        return null;
-      })()
-    );
-
-    // Wait for all parallel EVM checks
+    // Wait for all parallel EVM checks and only accept REAL transactions with valid hashes
     const results = await Promise.allSettled(evmPromises);
     for (const res of results) {
-      if (res.status === 'fulfilled' && res.value && res.value.isDetected) {
+      if (res.status === 'fulfilled' && res.value && res.value.isDetected && res.value.txHash) {
         return res.value;
       }
     }

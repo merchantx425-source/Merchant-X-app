@@ -229,15 +229,13 @@ export default function App() {
     };
   }, []);
 
-  // Trigger balance fetch immediately when wallet state changes
+  // Trigger balance fetch immediately when wallet state changes, and poll periodically
   useEffect(() => {
     refreshBalances();
+    const interval = setInterval(refreshBalances, 20000); // 20s auto balance sync
+    return () => clearInterval(interval);
   }, [
-    walletState.evmAddress,
-    walletState.btcAddress,
-    walletState.isConnected,
-    settings.customBtcReceivingAddress,
-    settings.customEvmReceivingAddress,
+    refreshBalances,
   ]);
 
   // Persist Settings
