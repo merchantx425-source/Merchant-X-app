@@ -166,35 +166,37 @@ export default function App() {
     const activeEvm = walletState.evmAddress || settings.customEvmReceivingAddress || null;
     const activeBtc = walletState.btcAddress || settings.customBtcReceivingAddress || null;
 
-    const updatedBalances = { ...balances };
-
-    await Promise.all(
+    const results = await Promise.all(
       ASSET_ORDER.map(async (symbol) => {
         const config = SUPPORTED_ASSETS[symbol];
         const targetAddress = config.networkFamily === 'bitcoin' ? activeBtc : activeEvm;
 
         if (targetAddress) {
-          const res = await fetchRealAssetBalance(symbol, targetAddress);
-          updatedBalances[symbol] = {
-            symbol,
-            balance: res.balance,
-            balanceRaw: res.balanceRaw,
-            isLoading: false,
-            error: res.error,
-          };
+          try {
+            const res = await fetchRealAssetBalance(symbol, targetAddress);
+            return { symbol, res };
+          } catch (err: any) {
+            console.warn(`Balance fetch warning for ${symbol}:`, err);
+            return { symbol, res: { balance: '0', balanceRaw: 0, error: null } };
+          }
         } else {
-          updatedBalances[symbol] = {
-            symbol,
-            balance: '0',
-            balanceRaw: 0,
-            isLoading: false,
-            error: null,
-          };
+          return { symbol, res: { balance: '0', balanceRaw: 0, error: null } };
         }
       })
     );
 
-    setBalances({ ...updatedBalances });
+    const updatedBalances = { ...balances };
+    results.forEach(({ symbol, res }) => {
+      updatedBalances[symbol] = {
+        symbol,
+        balance: res.balance,
+        balanceRaw: res.balanceRaw,
+        isLoading: false,
+        error: res.error,
+      };
+    });
+
+    setBalances(updatedBalances);
     setIsRefreshingBalances(false);
   }, [
     walletState.evmAddress,
