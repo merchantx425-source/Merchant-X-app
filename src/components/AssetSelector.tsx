@@ -2,6 +2,7 @@ import React from 'react';
 import { CryptoAsset, AssetBalance } from '../types/merchant';
 import { SUPPORTED_ASSETS, ASSET_ORDER } from '../config/constants';
 import { getTranslation } from '../config/i18n';
+import { CryptoAssetIcon } from './CryptoAssetIcon';
 import { RefreshCw, AlertTriangle } from 'lucide-react';
 
 interface AssetSelectorProps {
@@ -39,7 +40,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
         </button>
       </div>
 
-      {/* 5 Asset Cards in single horizontal grid / scrollable */}
+      {/* 5 Asset Cards in responsive grid */}
       <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
         {ASSET_ORDER.map((symbol) => {
           const config = SUPPORTED_ASSETS[symbol];
@@ -51,14 +52,19 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
               key={symbol}
               type="button"
               onClick={() => onSelectAsset(symbol)}
-              className={`relative flex flex-col items-center justify-between py-2 px-1 sm:px-2 rounded-xl transition-all duration-150 text-center cursor-pointer min-h-[68px] ${
+              className={`relative flex flex-col items-center justify-between py-2 px-1 sm:px-1.5 rounded-xl transition-all duration-150 text-center cursor-pointer min-h-[78px] ${
                 isSelected
-                  ? 'bg-[#1e1a14] border-2 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40'
-                  : 'bg-[#12141a] border border-zinc-800/80 hover:border-zinc-700 hover:bg-[#181a22]'
+                  ? 'bg-amber-500/10 border-2 border-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.25)] ring-1 ring-amber-500/40 text-amber-400'
+                  : 'bg-[#12141a] border border-zinc-800/80 hover:border-zinc-700 hover:bg-[#181a22] text-zinc-300'
               }`}
             >
-              {/* Top Symbol & Badge */}
-              <div className="flex flex-col items-center w-full">
+              {/* Asset Official Logo */}
+              <div className="relative mb-1">
+                <CryptoAssetIcon asset={symbol} size="md" />
+              </div>
+
+              {/* Symbol & Network Name */}
+              <div className="flex flex-col items-center w-full leading-tight">
                 <span
                   className={`text-xs sm:text-sm font-extrabold tracking-tight font-display ${
                     isSelected ? 'text-amber-400' : 'text-white'
@@ -67,7 +73,7 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
                   {symbol}
                 </span>
                 <span className="text-[9px] text-zinc-500 font-medium truncate max-w-full">
-                  {config.network === 'Polygon' ? 'Polygon' : config.network === 'Ethereum' ? 'ETH' : 'BTC'}
+                  {config.network === 'Polygon' ? 'Polygon' : config.network === 'Ethereum' ? 'Ethereum' : 'Bitcoin'}
                 </span>
               </div>
 
@@ -81,13 +87,13 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
                     title={balanceData.error}
                   >
                     <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
-                    <span>Error</span>
+                    <span>0</span>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center">
                     <span
                       className={`text-[10px] sm:text-[11px] font-mono font-bold tracking-tight truncate max-w-full ${
-                        isSelected ? 'text-zinc-200' : 'text-zinc-400'
+                        isSelected ? 'text-zinc-100' : 'text-zinc-400'
                       }`}
                     >
                       {balanceData?.balance ?? '0'}

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { CryptoAsset, AssetBalance, WalletState, AppSettings } from '../types/merchant';
 import { SUPPORTED_FIAT, SUPPORTED_ASSETS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
@@ -6,7 +6,8 @@ import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
 import { AssetSelector } from './AssetSelector';
 import { NumericKeypad } from './NumericKeypad';
-import { Settings as SettingsIcon, Wallet } from 'lucide-react';
+import { openWalletModal } from '../config/appkit';
+import { Settings as SettingsIcon, Wallet, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
 
 interface POSProps {
   amountInput: string;
@@ -24,6 +25,9 @@ interface POSProps {
   onOpenWalletModal: () => void;
   onOpenSettings: () => void;
   settings: AppSettings;
+  onRefreshRates?: () => void;
+  ratesError?: string | null;
+  lastRatesUpdated?: number;
 }
 
 export const POS: React.FC<POSProps> = ({
@@ -42,9 +46,16 @@ export const POS: React.FC<POSProps> = ({
   onOpenWalletModal,
   onOpenSettings,
   settings,
+  onRefreshRates,
+  ratesError,
+  lastRatesUpdated,
 }) => {
+  const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
+  const [isOpeningWallet, setIsOpeningWallet] = useState(false);
+
   const fiatConfig = SUPPORTED_FIAT[settings.fiatCurrency];
   const lang = settings.language;
+  const assetConfig = SUPPORTED_ASSETS[selectedAsset];
 
   // Numeric amount calculation
   const numericAmount = useMemo(() => {
@@ -53,12 +64,11 @@ export const POS: React.FC<POSProps> = ({
     return isNaN(parsed) ? 0 : parsed;
   }, [amountInput]);
 
-  // Formatted fiat text (e.g. ₦5,000 or ₦0)
+  // Formatted fiat text (e.g. ₦50,000 or ₦0)
   const formattedFiatDisplay = useMemo(() => {
     if (numericAmount === 0) {
       return `${fiatConfig.symbol}0`;
     }
-    // Handle decimals if user entered a period
     if (amountInput.includes('.')) {
       const [intPart, decPart] = amountInput.split('.');
       const formattedInt = parseInt(intPart || '0', 10).toLocaleString('en-US');
@@ -67,12 +77,14 @@ export const POS: React.FC<POSProps> = ({
     return `${fiatConfig.symbol}${numericAmount.toLocaleString('en-US')}`;
   }, [numericAmount, amountInput, fiatConfig.symbol]);
 
+  // Current market price
+  const marketPrice = cryptoInFiatRates[selectedAsset] || 0;
+
   // Crypto conversion
   const estimatedCryptoAmount = useMemo(() => {
-    const rateInFiat = cryptoInFiatRates[selectedAsset] || 1;
-    if (rateInFiat <= 0 || numericAmount <= 0) return 0;
-    return numericAmount / rateInFiat;
-  }, [numericAmount, selectedAsset, cryptoInFiatRates]);
+    if (marketPrice <= 0 || numericAmount <= 0) return 0;
+    return numericAmount / marketPrice;
+  }, [numericAmount, marketPrice]);
 
   const chargeLabel = getTranslation(lang, 'charge');
 
@@ -87,6 +99,37 @@ export const POS: React.FC<POSProps> = ({
   }, [numericAmount, fiatConfig.symbol, chargeLabel]);
 
   const isChargeDisabled = numericAmount <= 0;
+
+  // Direct trigger for Web3 Wallet Connect Modal
+  const handleConnectWalletClick = async () => {
+    setWalletConnectError(null);
+    setIsOpeningWallet(true);
+    try {
+      const res = await openWalletModal();
+      if (!res.success) {
+        setWalletConnectError(res.error || 'Wallet connection unavailable.');
+      }
+    } catch {
+      setWalletConnectError('Wallet connection unavailable.');
+    } finally {
+      setIsOpeningWallet(false);
+    }
+  };
+
+  // Active connected address to display
+  const connectedDisplayAddress = useMemo(() => {
+    if (!walletState.isConnected) return null;
+    if (assetConfig.networkFamily === 'bitcoin' && walletState.btcAddress) {
+      return formatAddress(walletState.btcAddress, 4);
+    }
+    if (walletState.evmAddress) {
+      return formatAddress(walletState.evmAddress, 4);
+    }
+    if (walletState.btcAddress) {
+      return formatAddress(walletState.btcAddress, 4);
+    }
+    return 'Connected';
+  }, [walletState, assetConfig.networkFamily]);
 
   return (
     <div className="w-full max-w-md mx-auto flex flex-col justify-between min-h-[calc(100vh-5rem)] sm:min-h-[640px] px-3 sm:px-4 py-2 select-none">
@@ -104,22 +147,25 @@ export const POS: React.FC<POSProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={onOpenWalletModal}
+            onClick={walletState.isConnected ? onOpenWalletModal : handleConnectWalletClick}
+            disabled={isOpeningWallet}
             className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
               walletState.isConnected
                 ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300 hover:bg-emerald-900/50'
                 : 'bg-[#181a24] border-zinc-700/80 text-zinc-300 hover:text-white hover:border-amber-500/50'
             }`}
           >
-            <Wallet className="w-3.5 h-3.5 text-amber-400" />
+            {walletState.isConnected ? (
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Wallet className="w-3.5 h-3.5 text-amber-400" />
+            )}
             <span className="font-mono text-[11px]">
               {walletState.isConnected
-                ? walletState.evmAddress
-                  ? formatAddress(walletState.evmAddress, 3)
-                  : walletState.btcAddress
-                  ? formatAddress(walletState.btcAddress, 3)
-                  : getTranslation(lang, 'connected')
-                : getTranslation(lang, 'connect')}
+                ? `Connected ✓ ${connectedDisplayAddress || ''}`
+                : isOpeningWallet
+                ? 'Opening...'
+                : getTranslation(lang, 'connectWallet')}
             </span>
           </button>
 
@@ -134,24 +180,78 @@ export const POS: React.FC<POSProps> = ({
         </div>
       </header>
 
+      {/* Wallet Error Notice if any */}
+      {walletConnectError && (
+        <div className="mt-2 p-2.5 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center justify-between text-xs text-red-200">
+          <div className="flex items-center gap-1.5">
+            <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+            <span>{walletConnectError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleConnectWalletClick}
+            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] rounded-lg transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* 2. Amount Display Area (Large & Centered) */}
-      <section className="flex flex-col items-center justify-center py-4 sm:py-6 text-center my-auto">
+      <section className="flex flex-col items-center justify-center py-4 sm:py-5 text-center my-auto">
         <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-1 font-mono">
           {getTranslation(lang, 'enterAmount')}
         </div>
 
-        {/* Large Amount */}
+        {/* Large Fiat Amount */}
         <div className="text-4xl sm:text-5xl md:text-6xl font-extrabold font-display tracking-tight text-white break-all px-2 transition-all">
           {formattedFiatDisplay}
         </div>
 
-        {/* Crypto conversion subtitle */}
-        <div className="flex items-center justify-center gap-1.5 text-xs sm:text-sm font-mono text-amber-400 font-semibold mt-1">
-          <span>≈</span>
-          <span>{formatCryptoAmount(estimatedCryptoAmount, selectedAsset)} {selectedAsset}</span>
-          <span className="text-[10px] text-zinc-400 font-sans">
-            ({SUPPORTED_ASSETS[selectedAsset].network})
-          </span>
+        {/* Real Live Market Price & Calculated Payment */}
+        <div className="mt-2 space-y-1">
+          {ratesError ? (
+            <div className="flex items-center justify-center gap-1.5 text-xs text-red-400">
+              <span>Unable to load current price</span>
+              {onRefreshRates && (
+                <button
+                  type="button"
+                  onClick={onRefreshRates}
+                  className="underline text-amber-400 hover:text-amber-300 cursor-pointer"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Market Price per Asset */}
+              <div className="text-[11px] sm:text-xs text-zinc-400 font-medium">
+                {selectedAsset} market price:{' '}
+                <span className="text-zinc-200 font-mono font-semibold">
+                  {fiatConfig.symbol}
+                  {marketPrice.toLocaleString('en-US', {
+                    minimumFractionDigits: marketPrice < 1 ? 4 : 0,
+                    maximumFractionDigits: marketPrice < 1 ? 6 : 2,
+                  })}{' '}
+                  / {selectedAsset}
+                </span>
+              </div>
+
+              {/* Calculated Customer Payment Amount */}
+              <div className="flex items-center justify-center gap-1.5 text-xs sm:text-sm font-mono text-amber-400 font-bold">
+                <span>Customer payment amount:</span>
+                <span>
+                  {formatCryptoAmount(estimatedCryptoAmount, selectedAsset)} {selectedAsset}
+                </span>
+              </div>
+
+              {/* Update Timestamp */}
+              <div className="text-[10px] text-zinc-500 font-mono">
+                Price updated just now
+              </div>
+            </>
+          )}
         </div>
       </section>
 

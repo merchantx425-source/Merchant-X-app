@@ -11,12 +11,135 @@
     font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+    background-color: #07080b;
+    color: #ffffff;
   }
 
+  /* Full Light Mode Overrides */
+  html.light,
   html.light body {
-    background-color: #f3f4f8;
-    color: #0f172a;
+    background-color: #f4f5f8 !important;
+    color: #0f172a !important;
   }
+}
+
+/* Light Theme Component Transformations */
+html.light main,
+html.light div.min-h-screen {
+  background-color: #f4f5f8 !important;
+  color: #0f172a !important;
+}
+
+html.light header {
+  border-color: rgba(226, 232, 240, 0.9) !important;
+}
+
+html.light nav {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Light cards & containers */
+html.light .bg-\[\#07080b\],
+html.light .bg-\[\#090a0e\],
+html.light .bg-\[\#090a0f\],
+html.light .bg-\[\#0a0b0e\],
+html.light .bg-\[\#0b0c10\],
+html.light .bg-\[\#0c0d12\],
+html.light .bg-\[\#0d0e14\],
+html.light .bg-\[\#111319\],
+html.light .bg-\[\#12141a\],
+html.light .bg-\[\#13151b\],
+html.light .bg-\[\#14161f\],
+html.light .bg-\[\#161822\],
+html.light .bg-\[\#181a22\],
+html.light .bg-\[\#181a23\],
+html.light .bg-\[\#181a24\],
+html.light .bg-\[\#1a1c24\],
+html.light .bg-\[\#1a1d28\],
+html.light .bg-\[\#1c1f2b\],
+html.light .bg-\[\#1e1a14\],
+html.light .bg-\[\#1f2230\],
+html.light .bg-\[\#202330\],
+html.light .bg-zinc-900,
+html.light .bg-zinc-950 {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+}
+
+/* Keypad button states in Light mode */
+html.light .keypad-btn {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+html.light .keypad-btn:hover {
+  background-color: #f8fafc !important;
+}
+html.light .keypad-btn:active {
+  background-color: #f1f5f9 !important;
+  transform: scale(0.95);
+}
+
+/* Input fields & Selects in Light mode */
+html.light input,
+html.light select,
+html.light textarea {
+  background-color: #ffffff !important;
+  border-color: #cbd5e1 !important;
+  color: #0f172a !important;
+}
+
+html.light input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Text adaptations */
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+html.light .text-zinc-100,
+html.light .text-zinc-200,
+html.light .text-zinc-300 {
+  color: #1e293b !important;
+}
+
+html.light .text-zinc-400 {
+  color: #475569 !important;
+}
+
+html.light .text-zinc-500 {
+  color: #64748b !important;
+}
+
+/* Borders in Light mode */
+html.light .border-zinc-800,
+html.light .border-zinc-700,
+html.light .border-purple-900\/20,
+html.light .border-purple-900\/30 {
+  border-color: #e2e8f0 !important;
+}
+
+/* Dividers in Light mode */
+html.light .divide-zinc-800\/60 > * + * {
+  border-color: #e2e8f0 !important;
+}
+
+/* Modal backgrounds in Light mode */
+html.light .bg-black\/80,
+html.light .bg-black\/85 {
+  background-color: rgba(15, 23, 42, 0.6) !important;
+}
+
+/* Printable Receipt in Light mode */
+html.light #printable-receipt {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
 }
 
 /* Custom scrollbar */
@@ -33,15 +156,6 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(148, 163, 184, 0.4);
-}
-
-/* Keypad tap active feedback */
-.keypad-btn {
-  transition: all 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-}
-.keypad-btn:active {
-  transform: scale(0.94);
-  filter: brightness(1.25);
 }
 
 /* Print formatting for Receipts */

@@ -1,13 +1,12 @@
 /**
- * Safe WalletConnect & Reown AppKit Configuration Module
+ * Official WalletConnect & Reown AppKit Configuration Module
  * 
- * ZERO TOP-LEVEL HEAVY IMPORTS:
- * All WalletConnect / Reown AppKit SDKs are loaded dynamically only when the user
- * explicitly clicks "Open Official AppKit Modal" or connects.
- * This guarantees the POS Terminal UI and Preview NEVER crash on startup.
+ * Configures EVM (Polygon, Ethereum) and Bitcoin adapters.
+ * Subscribes to real-time wallet connections so that upon approval,
+ * the Merchant X terminal immediately shows "Connected ✓" and loads balances.
  */
 
-// Safe browser environment polyfills for Web3 libraries if needed
+// Browser polyfills for Web3 libraries if needed
 if (typeof window !== 'undefined') {
   if (!(window as any).global) {
     (window as any).global = window;
@@ -19,33 +18,62 @@ export const WALLETCONNECT_PROJECT_ID =
 
 let appKitInstance: any = null;
 let isInitializing = false;
+let accountChangeCallbacks: Array<(account: { address: string | null; caipAddress?: string; isConnected: boolean }) => void> = [];
 
 export const metadata = {
   name: 'Merchant X',
-  description: 'Merchant X Crypto Payment Terminal POS',
+  description: 'Merchant X Multichain Crypto Merchant POS Terminal',
   url: typeof window !== 'undefined' ? window.location.origin : 'https://merchantx.io',
   icons: ['https://avatars.githubusercontent.com/u/179229932'],
 };
 
 /**
- * Safely initialize AppKit instance on-demand only
+ * Register a listener for wallet account changes
+ */
+export function onAppKitAccountChange(cb: (account: { address: string | null; caipAddress?: string; isConnected: boolean }) => void) {
+  accountChangeCallbacks.push(cb);
+  return () => {
+    accountChangeCallbacks = accountChangeCallbacks.filter((c) => c !== cb);
+  };
+}
+
+function notifyAccountChange(account: { address: string | null; caipAddress?: string; isConnected: boolean }) {
+  for (const cb of accountChangeCallbacks) {
+    try {
+      cb(account);
+    } catch (e) {
+      console.warn('Error in account change callback:', e);
+    }
+  }
+}
+
+/**
+ * Safely initialize AppKit instance on-demand or in background
  */
 export async function getSafeAppKit(): Promise<any> {
   if (appKitInstance) return appKitInstance;
-  if (isInitializing) return null;
+  if (isInitializing) {
+    // Wait for in-flight initialization
+    let count = 0;
+    while (isInitializing && count < 20) {
+      await new Promise((r) => setTimeout(r, 100));
+      count++;
+    }
+    if (appKitInstance) return appKitInstance;
+  }
 
   isInitializing = true;
 
   try {
-    // Dynamic import to isolate from initial bundle/render
-    const [{ createAppKit }, { WagmiAdapter }, { mainnet, polygon }] = await Promise.all([
+    const [{ createAppKit }, { WagmiAdapter }, { BitcoinAdapter }, { mainnet, polygon, bitcoin }] = await Promise.all([
       import('@reown/appkit/react'),
       import('@reown/appkit-adapter-wagmi'),
+      import('@reown/appkit-adapter-bitcoin'),
       import('@reown/appkit/networks'),
     ]);
 
     const adapters: any[] = [];
-    const networks: any[] = [mainnet, polygon];
+    const networks: any[] = [mainnet, polygon, bitcoin];
 
     try {
       const wagmiAdapter = new WagmiAdapter({
@@ -54,22 +82,16 @@ export async function getSafeAppKit(): Promise<any> {
       });
       adapters.push(wagmiAdapter);
     } catch (wagmiErr) {
-      console.warn('[Merchant X] Wagmi adapter init warning:', wagmiErr);
+      console.warn('[Merchant X] Wagmi adapter init notice:', wagmiErr);
     }
 
-    // Try Bitcoin Adapter dynamically and safely isolated
     try {
-      const [{ BitcoinAdapter }, { bitcoin }] = await Promise.all([
-        import('@reown/appkit-adapter-bitcoin'),
-        import('@reown/appkit/networks'),
-      ]);
       const bitcoinAdapter = new BitcoinAdapter({
         projectId: WALLETCONNECT_PROJECT_ID,
       });
       adapters.push(bitcoinAdapter);
-      networks.push(bitcoin);
     } catch (btcErr) {
-      console.warn('[Merchant X] Bitcoin adapter isolated notice:', btcErr);
+      console.warn('[Merchant X] Bitcoin adapter init notice:', btcErr);
     }
 
     if (createAppKit && adapters.length > 0) {
@@ -92,9 +114,22 @@ export async function getSafeAppKit(): Promise<any> {
           '--w3m-z-index': 99999,
         },
       });
+
+      // Subscribe to real-time account state changes
+      if (typeof appKitInstance.subscribeAccount === 'function') {
+        appKitInstance.subscribeAccount((account: any) => {
+          if (account) {
+            notifyAccountChange({
+              address: account.address || null,
+              caipAddress: account.caipAddress,
+              isConnected: !!account.isConnected && !!account.address,
+            });
+          }
+        });
+      }
     }
   } catch (err) {
-    console.warn('[Merchant X] AppKit on-demand init notice:', err);
+    console.warn('[Merchant X] AppKit initialization notice:', err);
   } finally {
     isInitializing = false;
   }
@@ -103,7 +138,16 @@ export async function getSafeAppKit(): Promise<any> {
 }
 
 /**
- * Safe function to open official WalletConnect modal on demand
+ * Preload AppKit in background so clicks open instantly
+ */
+if (typeof window !== 'undefined') {
+  setTimeout(() => {
+    getSafeAppKit().catch(() => {});
+  }, 1000);
+}
+
+/**
+ * Safe function to open official WalletConnect modal
  */
 export async function openWalletModal(): Promise<{ success: boolean; error?: string }> {
   try {
@@ -114,11 +158,11 @@ export async function openWalletModal(): Promise<{ success: boolean; error?: str
     }
     return {
       success: false,
-      error: 'WalletConnect modal could not be initialized in this environment. You can enter receiving addresses directly.',
+      error: 'Wallet connection unavailable.',
     };
   } catch (err: any) {
     console.warn('[Merchant X] openWalletModal error:', err);
-    return { success: false, error: err?.message || 'Failed to open wallet modal' };
+    return { success: false, error: 'Wallet connection unavailable.' };
   }
 }
 

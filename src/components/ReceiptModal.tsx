@@ -4,7 +4,7 @@ import { SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
 import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
-import { X, Printer, Download, Share2, Check, ExternalLink } from 'lucide-react';
+import { X, Printer, Download, Share2, Check, ExternalLink, PlusCircle } from 'lucide-react';
 
 interface ReceiptModalProps {
   isOpen: boolean;
@@ -13,15 +13,17 @@ interface ReceiptModalProps {
   merchantName?: string;
   merchantLocation?: string;
   language?: string;
+  onNewPayment?: () => void;
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   isOpen,
   onClose,
   transaction,
-  merchantName = 'Merchant X Store #1',
-  merchantLocation = 'Lagos, Nigeria',
+  merchantName = 'Merchant X Store',
+  merchantLocation = 'Terminal 01',
   language = 'en',
+  onNewPayment,
 }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
   const [copiedLink, setCopiedLink] = React.useState(false);
@@ -41,7 +43,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     window.print();
   };
 
-  // DOWNLOAD RECEIPT as clean text/summary file
+  // DOWNLOAD RECEIPT as clean text file
   const handleDownload = () => {
     const textContent = `
 ========================================
@@ -49,6 +51,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           PAYMENT RECEIPT
 ========================================
 Status:            PAID ✓
+Order ID:          ${transaction.id}
 Reference:         ${transaction.reference}
 Date:              ${transaction.formattedDate}
 Time:              ${transaction.formattedTime}
@@ -56,18 +59,19 @@ Time:              ${transaction.formattedTime}
 Merchant:          ${merchantName}
 Location:          ${merchantLocation}
 ----------------------------------------
-Total Amount:      ${formattedFiat}
+Fiat Amount:       ${formattedFiat}
 Crypto Amount:     ${formattedCrypto}
-Crypto Asset:      ${transaction.cryptoAsset}
+Asset:             ${transaction.cryptoAsset}
 Network:           ${transaction.network}
+Market Price:      ${fiatConfig.symbol}${transaction.cryptoRate?.toLocaleString('en-US') || 'N/A'} / ${transaction.cryptoAsset}
 ----------------------------------------
 Merchant Wallet:   ${transaction.merchantWallet}
-Customer Wallet:   ${transaction.customerWallet || 'N/A'}
+Customer Wallet:   ${transaction.customerWallet || 'Verified On-Chain'}
 Tx Hash:           ${transaction.txHash || 'N/A'}
 Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash}
 ========================================
-      Thank you for your business!
-         Powered by Merchant X
+       Thank you for your business!
+          Powered by Merchant X
 ========================================
 `;
 
@@ -94,10 +98,9 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
       try {
         await navigator.share(shareData);
       } catch {
-        // User cancelled or unsupported
+        // User cancelled
       }
     } else {
-      // Fallback copy link
       if (navigator.clipboard) {
         navigator.clipboard.writeText(
           `Merchant X Receipt: Paid ${formattedFiat} (${formattedCrypto}) on ${transaction.network}. TX: ${transaction.txHash}`
@@ -106,6 +109,13 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
         setTimeout(() => setCopiedLink(false), 2500);
       }
     }
+  };
+
+  const handleNewPaymentClick = () => {
+    if (onNewPayment) {
+      onNewPayment();
+    }
+    onClose();
   };
 
   return (
@@ -147,7 +157,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
           {/* Status Badge */}
           <div className="py-3 flex flex-col items-center justify-center text-center border-b border-dashed border-zinc-700">
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/60 border border-emerald-500/50 text-emerald-400 text-xs font-extrabold tracking-wider uppercase">
-              <Check className="w-3.5 h-3.5" /> {getTranslation(language, 'paymentApproved')}
+              <Check className="w-3.5 h-3.5" /> PAID ✓
             </div>
             <div className="text-3xl font-extrabold font-display text-white mt-2">
               {formattedFiat}
@@ -160,8 +170,16 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
           {/* Key-value Data Rows */}
           <div className="py-3.5 space-y-2 text-xs border-b border-dashed border-zinc-700">
             <div className="flex items-center justify-between">
-              <span className="text-zinc-400">{getTranslation(language, 'reference')}:</span>
-              <span className="font-mono font-semibold text-zinc-200">{transaction.reference}</span>
+              <span className="text-zinc-400">Order ID:</span>
+              <span className="font-mono font-semibold text-zinc-200">{transaction.id}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Fiat Amount:</span>
+              <span className="font-mono font-semibold text-zinc-200">{formattedFiat}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-400">Crypto Amount:</span>
+              <span className="font-mono font-semibold text-amber-400">{formattedCrypto}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-zinc-400">{getTranslation(language, 'paymentAsset')}:</span>
@@ -213,14 +231,14 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
         </div>
 
         {/* 3 Main Action Buttons: Print, Download, Share */}
-        <div className="grid grid-cols-3 gap-2 pt-2 no-print">
+        <div className="grid grid-cols-3 gap-2 pt-1 no-print">
           <button
             type="button"
             onClick={handlePrint}
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Printer className="w-4 h-4 text-amber-400" />
-            <span>{getTranslation(language, 'print')}</span>
+            <span>PRINT</span>
           </button>
           <button
             type="button"
@@ -228,7 +246,7 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Download className="w-4 h-4 text-amber-400" />
-            <span>{getTranslation(language, 'download')}</span>
+            <span>DOWNLOAD</span>
           </button>
           <button
             type="button"
@@ -236,7 +254,19 @@ Explorer:          ${EXPLORER_URLS[transaction.network]}/tx/${transaction.txHash
             className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Share2 className="w-4 h-4 text-amber-400" />
-            <span>{copiedLink ? 'Copied!' : getTranslation(language, 'share')}</span>
+            <span>{copiedLink ? 'Copied!' : 'SHARE'}</span>
+          </button>
+        </div>
+
+        {/* NEW PAYMENT BUTTON */}
+        <div className="pt-3 no-print">
+          <button
+            type="button"
+            onClick={handleNewPaymentClick}
+            className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:brightness-110 text-black font-extrabold text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <PlusCircle className="w-4 h-4" />
+            <span>NEW PAYMENT</span>
           </button>
         </div>
       </div>

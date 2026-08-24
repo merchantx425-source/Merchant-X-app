@@ -6,7 +6,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   CryptoAsset,
-  FiatCurrency,
   TransactionRecord,
   WalletState,
   AssetBalance,
@@ -18,7 +17,7 @@ import {
   fetchLiveCryptoRates,
   fetchRealAssetBalance,
 } from './services/blockchainService';
-import { disconnectWalletKit } from './config/appkit';
+import { disconnectWalletKit, onAppKitAccountChange } from './config/appkit';
 import { LoadingScreen } from './components/LoadingScreen';
 import { POS } from './components/POS';
 import { TransactionHistory } from './components/TransactionHistory';
@@ -91,16 +90,18 @@ export default function App() {
 
   // 6. POS Keypad & Asset State
   const [amountInput, setAmountInput] = useState<string>('');
-  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('ETH');
+  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('BTC');
 
   // 7. Live Rates & Balances State
   const [cryptoInFiatRates, setCryptoInFiatRates] = useState<Record<CryptoAsset, number>>({
-    BTC: 96000000,
-    ETH: 4500000,
-    USDT: 1540,
-    POL: 620,
+    BTC: 145000000,
+    ETH: 4850000,
+    USDT: 1560,
+    POL: 650,
     VERSE: 0.28,
   });
+  const [ratesError, setRatesError] = useState<string | null>(null);
+  const [lastRatesUpdated, setLastRatesUpdated] = useState<number>(Date.now());
 
   const [balances, setBalances] = useState<Record<CryptoAsset, AssetBalance>>({
     VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false },
@@ -116,7 +117,7 @@ export default function App() {
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false);
   const [activeReceiptTx, setActiveReceiptTx] = useState<TransactionRecord | null>(null);
 
-  // Apply Theme class to HTML
+  // Apply Theme class to HTML root
   useEffect(() => {
     const root = document.documentElement;
     if (settings.theme === 'dark') {
@@ -137,6 +138,32 @@ export default function App() {
       }
     }
   }, [settings.theme]);
+
+  // Listen for real-time AppKit / WalletConnect account changes
+  useEffect(() => {
+    const unsubscribe = onAppKitAccountChange((account) => {
+      if (account.isConnected && account.address) {
+        const isBtc = !account.address.startsWith('0x');
+        setWalletState((prev) => {
+          const updated: WalletState = {
+            ...prev,
+            evmAddress: isBtc ? prev.evmAddress : account.address,
+            btcAddress: isBtc ? account.address : prev.btcAddress,
+            isConnected: true,
+            walletProvider: 'AppKit Web3 Wallet',
+          };
+          try {
+            localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Persist Settings
   const handleUpdateSettings = (newSettings: Partial<AppSettings>) => {
@@ -196,16 +223,19 @@ export default function App() {
   // Fetch Live Rates
   const refreshRates = useCallback(async () => {
     try {
+      setRatesError(null);
       const rates = await fetchLiveCryptoRates(settings.fiatCurrency);
       setCryptoInFiatRates(rates.cryptoInFiat);
-    } catch (err) {
+      setLastRatesUpdated(Date.now());
+    } catch (err: any) {
       console.warn('Rates refresh failed:', err);
+      setRatesError('Unable to load current price');
     }
   }, [settings.fiatCurrency]);
 
   useEffect(() => {
     refreshRates();
-    const interval = setInterval(refreshRates, 30000); // every 30s
+    const interval = setInterval(refreshRates, 30000); // 30s auto-refresh
     return () => clearInterval(interval);
   }, [refreshRates]);
 
@@ -342,6 +372,14 @@ export default function App() {
     refreshBalances();
   };
 
+  // New Payment Handler for Receipt Modal
+  const handleNewPayment = () => {
+    setAmountInput('');
+    setActiveReceiptTx(null);
+    setIsChargeModalOpen(false);
+    setActiveTab('pos');
+  };
+
   // Export Transactions helper for Settings screen
   const handleExportTransactions = () => {
     if (transactions.length === 0) return;
@@ -352,6 +390,7 @@ export default function App() {
       'Time',
       'Status',
       'Fiat Amount',
+      'Currency',
       'Crypto Amount',
       'Asset',
       'Network',
@@ -365,6 +404,7 @@ export default function App() {
       t.formattedTime,
       t.status,
       t.amountFiat,
+      t.fiatCurrency,
       t.amountCrypto,
       t.cryptoAsset,
       t.network,
@@ -398,12 +438,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#07080b] text-white flex flex-col justify-between selection:bg-amber-500 selection:text-black">
-      {/* 1. Mandatory Loading Screen on App Load */}
+      {/* 1. Loading Screen Animation */}
       {isLoadingApp && (
         <LoadingScreen onComplete={() => setIsLoadingApp(false)} />
       )}
 
-      {/* 2. Main Terminal Content Container */}
+      {/* 2. Main Terminal Screen Container */}
       <main className="flex-1 w-full max-w-lg mx-auto flex flex-col justify-center">
         {activeTab === 'pos' && (
           <POS
@@ -422,6 +462,9 @@ export default function App() {
             onOpenWalletModal={() => setIsWalletModalOpen(true)}
             onOpenSettings={() => setActiveTab('settings')}
             settings={settings}
+            onRefreshRates={refreshRates}
+            ratesError={ratesError}
+            lastRatesUpdated={lastRatesUpdated}
           />
         )}
 
@@ -446,7 +489,7 @@ export default function App() {
         )}
       </main>
 
-      {/* 3. Bottom Mobile-First Navigation */}
+      {/* 3. Bottom Mobile Navigation */}
       <Navbar
         currentTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
@@ -462,7 +505,7 @@ export default function App() {
         onDisconnectWallet={handleDisconnectWallet}
       />
 
-      {/* 5. Charge Flow & Verification Modal */}
+      {/* 5. Charge Flow & Blockchain Verification Modal */}
       <ChargeFlowModal
         isOpen={isChargeModalOpen}
         onClose={() => setIsChargeModalOpen(false)}
@@ -476,7 +519,7 @@ export default function App() {
         language={settings.language}
       />
 
-      {/* 6. Official Merchant X Receipt Modal */}
+      {/* 6. Merchant X Receipt Modal */}
       <ReceiptModal
         isOpen={!!activeReceiptTx}
         onClose={() => setActiveReceiptTx(null)}
@@ -484,6 +527,7 @@ export default function App() {
         merchantName={settings.merchantName}
         merchantLocation={settings.merchantLocation}
         language={settings.language}
+        onNewPayment={handleNewPayment}
       />
     </div>
   );
