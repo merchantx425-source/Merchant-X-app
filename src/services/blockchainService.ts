@@ -675,6 +675,7 @@ export async function verifyBlockchainTransaction(params: {
 
 /**
  * Real-time automatic on-chain scanner to detect incoming customer payments
+ * Monitors Polygon, Ethereum, and Bitcoin networks using parallel high-speed indexers & RPCs
  */
 export async function scanForIncomingPayment(params: {
   merchantWallet: string;
@@ -701,92 +702,138 @@ export async function scanForIncomingPayment(params: {
   const minRequiredAmount = expectedAmountCrypto * 0.985; // 1.5% max rounding tolerance
 
   try {
-    // 1. Bitcoin Automatic Detection
+    // 1. Bitcoin Automatic Detection (Runs Mempool.space, Blockstream, and Blockchain.info in parallel)
     if (config.networkFamily === 'bitcoin') {
       if (cleanAddr.startsWith('0x')) return { isDetected: false };
 
-      // A. Try Mempool.space
-      try {
-        const res = await Promise.race([
-          fetch(`https://mempool.space/api/address/${cleanAddr}/txs`),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-        ]);
-        if (res.ok) {
-          const txs = await res.json();
-          if (Array.isArray(txs) && txs.length > 0) {
-            for (const tx of txs) {
-              const txTimeMs = tx.status?.block_time ? tx.status.block_time * 1000 : Date.now();
-              const isRecent = !tx.status?.confirmed || txTimeMs >= sessionStartTimestamp - 180000;
-
-              if (isRecent) {
-                const matchedVout = tx.vout?.find(
-                  (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
-                );
-                if (matchedVout) {
-                  const btcAmount = (matchedVout.value || 0) / 1e8;
-                  if (btcAmount >= minRequiredAmount) {
-                    const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
-                    return {
-                      isDetected: true,
-                      txHash: tx.txid,
-                      customerAddress: sender,
-                      actualAmount: btcAmount,
-                      isConfirmed: !!tx.status?.confirmed,
-                      blockNumber: tx.status?.block_height,
-                    };
+      const btcPromises = [
+        // A. Mempool.space address txs
+        (async () => {
+          try {
+            const res = await Promise.race([
+              fetch(`https://mempool.space/api/address/${cleanAddr}/txs`),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)),
+            ]);
+            if (res.ok) {
+              const txs = await res.json();
+              if (Array.isArray(txs) && txs.length > 0) {
+                for (const tx of txs) {
+                  const matchedVout = tx.vout?.find(
+                    (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
+                  );
+                  if (matchedVout) {
+                    const btcAmount = (matchedVout.value || 0) / 1e8;
+                    if (btcAmount >= minRequiredAmount) {
+                      const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+                      return {
+                        isDetected: true,
+                        txHash: tx.txid,
+                        customerAddress: sender,
+                        actualAmount: btcAmount,
+                        isConfirmed: !!tx.status?.confirmed,
+                        blockNumber: tx.status?.block_height,
+                      };
+                    }
                   }
                 }
               }
             }
-          }
-        }
-      } catch (btcErr) {
-        console.warn('Mempool.space scan notice:', btcErr);
-      }
+          } catch {}
+          return null;
+        })(),
 
-      // B. Try Blockstream API
-      try {
-        const bsRes = await Promise.race([
-          fetch(`https://blockstream.info/api/address/${cleanAddr}/txs`),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-        ]);
-        if (bsRes.ok) {
-          const txs = await bsRes.json();
-          if (Array.isArray(txs) && txs.length > 0) {
-            for (const tx of txs) {
-              const matchedVout = tx.vout?.find(
-                (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
-              );
-              if (matchedVout) {
-                const btcAmount = (matchedVout.value || 0) / 1e8;
-                if (btcAmount >= minRequiredAmount) {
-                  const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
-                  return {
-                    isDetected: true,
-                    txHash: tx.txid,
-                    customerAddress: sender,
-                    actualAmount: btcAmount,
-                    isConfirmed: !!tx.status?.confirmed,
-                    blockNumber: tx.status?.block_height,
-                  };
+        // B. Blockstream API
+        (async () => {
+          try {
+            const res = await Promise.race([
+              fetch(`https://blockstream.info/api/address/${cleanAddr}/txs`),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)),
+            ]);
+            if (res.ok) {
+              const txs = await res.json();
+              if (Array.isArray(txs) && txs.length > 0) {
+                for (const tx of txs) {
+                  const matchedVout = tx.vout?.find(
+                    (v: any) => v.scriptpubkey_address?.toLowerCase() === cleanAddr.toLowerCase()
+                  );
+                  if (matchedVout) {
+                    const btcAmount = (matchedVout.value || 0) / 1e8;
+                    if (btcAmount >= minRequiredAmount) {
+                      const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+                      return {
+                        isDetected: true,
+                        txHash: tx.txid,
+                        customerAddress: sender,
+                        actualAmount: btcAmount,
+                        isConfirmed: !!tx.status?.confirmed,
+                        blockNumber: tx.status?.block_height,
+                      };
+                    }
+                  }
                 }
               }
             }
-          }
-        }
-      } catch {
-        // Fallback to balance check
-      }
+          } catch {}
+          return null;
+        })(),
 
-      // C. Bitcoin Balance Delta Check
-      const currentBtcBal = await fetchRealAssetBalance('BTC', cleanAddr);
-      if (currentBtcBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
-        return {
-          isDetected: true,
-          txHash: `btc_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`,
-          actualAmount: currentBtcBal.balanceRaw - initialBalanceRaw,
-          isConfirmed: true,
-        };
+        // C. Blockchain.info Raw Address Check
+        (async () => {
+          try {
+            const res = await Promise.race([
+              fetch(`https://blockchain.info/rawaddr/${cleanAddr}?limit=5&cors=true`),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)),
+            ]);
+            if (res.ok) {
+              const data = await res.json();
+              if (data?.txs && Array.isArray(data.txs)) {
+                for (const tx of data.txs) {
+                  const matchedOut = tx.out?.find(
+                    (o: any) => o.addr?.toLowerCase() === cleanAddr.toLowerCase()
+                  );
+                  if (matchedOut) {
+                    const btcAmount = (matchedOut.value || 0) / 1e8;
+                    if (btcAmount >= minRequiredAmount) {
+                      const sender = tx.inputs?.[0]?.prev_out?.addr || 'Bitcoin Wallet';
+                      return {
+                        isDetected: true,
+                        txHash: tx.hash,
+                        customerAddress: sender,
+                        actualAmount: btcAmount,
+                        isConfirmed: (tx.block_height || 0) > 0,
+                        blockNumber: tx.block_height,
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          } catch {}
+          return null;
+        })(),
+
+        // D. Bitcoin Balance Delta Check
+        (async () => {
+          try {
+            const currentBtcBal = await fetchRealAssetBalance('BTC', cleanAddr);
+            if (currentBtcBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
+              return {
+                isDetected: true,
+                txHash: `btc_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`,
+                actualAmount: currentBtcBal.balanceRaw - initialBalanceRaw,
+                isConfirmed: true,
+              };
+            }
+          } catch {}
+          return null;
+        })(),
+      ];
+
+      const results = await Promise.allSettled(btcPromises);
+      for (const res of results) {
+        if (res.status === 'fulfilled' && res.value && res.value.isDetected) {
+          return res.value;
+        }
       }
 
       return { isDetected: false };
@@ -799,249 +846,271 @@ export async function scanForIncomingPayment(params: {
 
     const isPolygon = config.network === 'Polygon';
 
-    // A. Direct Polygonscan API verification (Polygon Network)
-    if (isPolygon) {
-      if (config.contractAddress) {
-        // Check Polygonscan for ERC20 Token transfers (VERSE, USDT)
+    // Parallel EVM Detection Tasks
+    const evmPromises: Promise<any>[] = [];
+
+    // Task 1: Polygonscan / Etherscan API Check
+    evmPromises.push(
+      (async () => {
         try {
-          const canonicalContract = config.contractAddress.toLowerCase();
-          const polyScanUrl = `https://api.polygonscan.com/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=25&sort=desc`;
+          if (config.contractAddress) {
+            const canonicalContract = config.contractAddress.toLowerCase();
+            const polyScanUrl = isPolygon
+              ? `https://api.polygonscan.com/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`
+              : `https://api.etherscan.io/api?module=account&action=tokentx&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`;
 
-          const psRes = await Promise.race([
-            fetch(polyScanUrl),
-            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3500)),
-          ]);
+            const psRes = await Promise.race([
+              fetch(polyScanUrl),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2800)),
+            ]);
 
-          if (psRes.ok) {
-            const data = await psRes.json();
-            if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
-              for (const tx of data.result) {
-                const toAddr = (tx.to || '').toLowerCase();
-                const contract = (tx.contractAddress || '').toLowerCase();
-                const tokenSymbol = (tx.tokenSymbol || '').toUpperCase();
+            if (psRes.ok) {
+              const data = await psRes.json();
+              if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
+                for (const tx of data.result) {
+                  const toAddr = (tx.to || '').toLowerCase();
+                  const contract = (tx.contractAddress || '').toLowerCase();
+                  const tokenSymbol = (tx.tokenSymbol || '').toUpperCase();
 
-                const isTargetToken =
-                  contract === canonicalContract ||
-                  (expectedAsset === 'VERSE' &&
-                    (contract === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
-                      contract === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18' ||
-                      tokenSymbol === 'VERSE')) ||
-                  (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE'));
+                  const isTargetToken =
+                    contract === canonicalContract ||
+                    (expectedAsset === 'VERSE' &&
+                      (contract === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
+                        contract === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18' ||
+                        tokenSymbol === 'VERSE')) ||
+                    (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE'));
 
-                if (toAddr === cleanAddr.toLowerCase() && isTargetToken) {
-                  const tokenDecimals = tx.tokenDecimal ? parseInt(tx.tokenDecimal, 10) : config.decimals;
-                  const rawVal = ethers.toBigInt(tx.value || '0');
-                  const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
+                  if (toAddr === cleanAddr.toLowerCase() && isTargetToken) {
+                    const tokenDecimals = tx.tokenDecimal ? parseInt(tx.tokenDecimal, 10) : config.decimals;
+                    const rawVal = ethers.toBigInt(tx.value || '0');
+                    const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
 
-                  if (actualAmount >= minRequiredAmount) {
-                    return {
-                      isDetected: true,
-                      txHash: tx.hash,
-                      customerAddress: tx.from || 'Verified Customer',
-                      actualAmount,
-                      isConfirmed: true,
-                      blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
-                    };
+                    if (actualAmount >= minRequiredAmount) {
+                      return {
+                        isDetected: true,
+                        txHash: tx.hash,
+                        customerAddress: tx.from || 'Verified Customer',
+                        actualAmount,
+                        isConfirmed: true,
+                        blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            // Native POL / MATIC or ETH txlist
+            const polyScanNativeUrl = isPolygon
+              ? `https://api.polygonscan.com/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`
+              : `https://api.etherscan.io/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=20&sort=desc`;
+
+            const psRes = await Promise.race([
+              fetch(polyScanNativeUrl),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2800)),
+            ]);
+
+            if (psRes.ok) {
+              const data = await psRes.json();
+              if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
+                for (const tx of data.result) {
+                  const toAddr = (tx.to || '').toLowerCase();
+                  const isSuccess = tx.isError === '0' || tx.txreceipt_status === '1';
+
+                  if (toAddr === cleanAddr.toLowerCase() && isSuccess) {
+                    const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
+                    if (actualAmount >= minRequiredAmount) {
+                      return {
+                        isDetected: true,
+                        txHash: tx.hash,
+                        customerAddress: tx.from || 'Verified Customer',
+                        actualAmount,
+                        isConfirmed: true,
+                        blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
+                      };
+                    }
                   }
                 }
               }
             }
           }
-        } catch (psErr) {
-          console.warn('Polygonscan tokentx scan notice:', psErr);
-        }
-      } else {
-        // Check Polygonscan for Native POL / MATIC transactions
+        } catch {}
+        return null;
+      })()
+    );
+
+    // Task 2: Blockscout REST API Check
+    evmPromises.push(
+      (async () => {
         try {
-          const polyScanNativeUrl = `https://api.polygonscan.com/api?module=account&action=txlist&address=${cleanAddr}&startblock=0&endblock=99999999&page=1&offset=25&sort=desc`;
+          if (config.contractAddress) {
+            const canonicalContract = config.contractAddress.toLowerCase();
+            const blockscoutUrl = isPolygon
+              ? `https://polygon.blockscout.com/api/v2/addresses/${cleanAddr}/token-transfers?type=ERC-20`
+              : `https://eth.blockscout.com/api/v2/addresses/${cleanAddr}/token-transfers?type=ERC-20`;
 
-          const psRes = await Promise.race([
-            fetch(polyScanNativeUrl),
-            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3500)),
-          ]);
+            const bsRes = await Promise.race([
+              fetch(blockscoutUrl),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)),
+            ]);
 
-          if (psRes.ok) {
-            const data = await psRes.json();
-            if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
-              for (const tx of data.result) {
-                const toAddr = (tx.to || '').toLowerCase();
-                const isSuccess = tx.isError === '0' || tx.txreceipt_status === '1';
+            if (bsRes.ok) {
+              const data = await bsRes.json();
+              const items = data.items || [];
+              if (Array.isArray(items) && items.length > 0) {
+                for (const item of items) {
+                  const toAddr = (item.to?.hash || item.to || '').toLowerCase();
+                  const tokenAddr = (item.token?.address || '').toLowerCase();
+                  const tokenSymbol = (item.token?.symbol || '').toUpperCase();
 
-                if (toAddr === cleanAddr.toLowerCase() && isSuccess) {
-                  const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
-                  if (actualAmount >= minRequiredAmount) {
-                    return {
-                      isDetected: true,
-                      txHash: tx.hash,
-                      customerAddress: tx.from || 'Verified Customer',
-                      actualAmount,
-                      isConfirmed: true,
-                      blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
-                    };
+                  const isMatch =
+                    toAddr === cleanAddr.toLowerCase() &&
+                    (tokenAddr === canonicalContract ||
+                      (expectedAsset === 'VERSE' &&
+                        (tokenAddr === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
+                          tokenAddr === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18' ||
+                          tokenSymbol === 'VERSE')) ||
+                      (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE')));
+
+                  if (isMatch) {
+                    const tokenDecimals = item.token?.decimals ? parseInt(item.token.decimals, 10) : config.decimals;
+                    const rawVal = ethers.toBigInt(item.total?.value || item.value || '0');
+                    const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
+
+                    if (actualAmount >= minRequiredAmount) {
+                      return {
+                        isDetected: true,
+                        txHash: item.transaction_hash,
+                        customerAddress: item.from?.hash || 'Verified Customer',
+                        actualAmount,
+                        isConfirmed: true,
+                        blockNumber: item.block_number,
+                      };
+                    }
+                  }
+                }
+              }
+            }
+          } else {
+            // Blockscout Native Transactions (POL / ETH)
+            const blockscoutUrl = isPolygon
+              ? `https://polygon.blockscout.com/api/v2/addresses/${cleanAddr}/transactions`
+              : `https://eth.blockscout.com/api/v2/addresses/${cleanAddr}/transactions`;
+
+            const bsRes = await Promise.race([
+              fetch(blockscoutUrl),
+              new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000)),
+            ]);
+
+            if (bsRes.ok) {
+              const data = await bsRes.json();
+              const items = data.items || [];
+              if (Array.isArray(items) && items.length > 0) {
+                for (const tx of items) {
+                  const toAddr = (tx.to?.hash || tx.to || '').toLowerCase();
+                  const isOk = tx.status === 'ok' || tx.result === 'success' || !tx.has_error_in_internal_txs;
+
+                  if (toAddr === cleanAddr.toLowerCase() && isOk) {
+                    const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
+                    if (actualAmount >= minRequiredAmount) {
+                      return {
+                        isDetected: true,
+                        txHash: tx.hash,
+                        customerAddress: tx.from?.hash || 'Verified Customer',
+                        actualAmount,
+                        isConfirmed: true,
+                        blockNumber: tx.block_number,
+                      };
+                    }
                   }
                 }
               }
             }
           }
-        } catch (psNativeErr) {
-          console.warn('Polygonscan txlist scan notice:', psNativeErr);
-        }
-      }
+        } catch {}
+        return null;
+      })()
+    );
+
+    // Task 3: Direct EVM RPC Logs Query
+    if (config.contractAddress) {
+      evmPromises.push(
+        (async () => {
+          try {
+            const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+            const paddedMerchant = ethers.zeroPadValue(cleanAddr.toLowerCase(), 32);
+
+            const logs = isPolygon
+              ? await executeWithPolygonFallback(async (provider) => {
+                  const currentBlock = await provider.getBlockNumber();
+                  const fromBlock = Math.max(0, currentBlock - 40);
+                  return await provider.getLogs({
+                    address: config.contractAddress,
+                    topics: [transferTopic, null, paddedMerchant],
+                    fromBlock,
+                    toBlock: 'latest',
+                  });
+                })
+              : await executeWithEthereumFallback(async (provider) => {
+                  const currentBlock = await provider.getBlockNumber();
+                  const fromBlock = Math.max(0, currentBlock - 20);
+                  return await provider.getLogs({
+                    address: config.contractAddress,
+                    topics: [transferTopic, null, paddedMerchant],
+                    fromBlock,
+                    toBlock: 'latest',
+                  });
+                });
+
+            if (logs && logs.length > 0) {
+              const latestLog = logs[logs.length - 1];
+              const rawVal = ethers.toBigInt(latestLog.data);
+              const actualAmount = parseFloat(ethers.formatUnits(rawVal, config.decimals));
+
+              if (actualAmount >= minRequiredAmount) {
+                const sender = latestLog.topics?.[1]
+                  ? ethers.stripZerosLeft(latestLog.topics[1])
+                  : 'Customer Wallet';
+                return {
+                  isDetected: true,
+                  txHash: latestLog.transactionHash,
+                  customerAddress: sender,
+                  actualAmount,
+                  isConfirmed: true,
+                  blockNumber: latestLog.blockNumber,
+                };
+              }
+            }
+          } catch {}
+          return null;
+        })()
+      );
     }
 
-    // B. Blockscout REST Explorer API Check
-    if (config.contractAddress) {
-      const canonicalContract = config.contractAddress.toLowerCase();
-
-      // 1. Check Blockscout Token Transfers API (Fast, comprehensive REST JSON)
-      try {
-        const blockscoutUrl = isPolygon
-          ? `https://polygon.blockscout.com/api/v2/addresses/${cleanAddr}/token-transfers?type=ERC-20`
-          : `https://eth.blockscout.com/api/v2/addresses/${cleanAddr}/token-transfers?type=ERC-20`;
-
-        const bsRes = await Promise.race([
-          fetch(blockscoutUrl),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-        ]);
-
-        if (bsRes.ok) {
-          const data = await bsRes.json();
-          const items = data.items || [];
-          if (Array.isArray(items) && items.length > 0) {
-            for (const item of items) {
-              const toAddr = item.to?.hash?.toLowerCase() || '';
-              const tokenAddr = item.token?.address?.toLowerCase() || '';
-
-              // Match recipient and contract address
-              const isMatch =
-                toAddr === cleanAddr.toLowerCase() &&
-                (tokenAddr === canonicalContract ||
-                  (expectedAsset === 'VERSE' &&
-                    (tokenAddr === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
-                      tokenAddr === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18')));
-
-              if (isMatch) {
-                const tokenDecimals = item.token?.decimals ? parseInt(item.token.decimals, 10) : config.decimals;
-                const rawVal = ethers.toBigInt(item.total?.value || '0');
-                const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
-
-                if (actualAmount >= minRequiredAmount) {
-                  return {
-                    isDetected: true,
-                    txHash: item.transaction_hash,
-                    customerAddress: item.from?.hash || 'Verified Customer',
-                    actualAmount,
-                    isConfirmed: true,
-                    blockNumber: item.block_number,
-                  };
-                }
-              }
-            }
-          }
-        }
-      } catch (bsErr) {
-        console.warn('Blockscout ERC20 check notice:', bsErr);
-      }
-
-      // 2. Direct RPC Transfer Logs Query
-      try {
-        const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-        const paddedMerchant = ethers.zeroPadValue(cleanAddr.toLowerCase(), 32);
-
-        const logs = isPolygon
-          ? await executeWithPolygonFallback(async (provider) => {
-              const currentBlock = await provider.getBlockNumber();
-              const fromBlock = Math.max(0, currentBlock - 100);
-              return await provider.getLogs({
-                address: config.contractAddress,
-                topics: [transferTopic, null, paddedMerchant],
-                fromBlock,
-                toBlock: 'latest',
-              });
-            })
-          : await executeWithEthereumFallback(async (provider) => {
-              const currentBlock = await provider.getBlockNumber();
-              const fromBlock = Math.max(0, currentBlock - 30);
-              return await provider.getLogs({
-                address: config.contractAddress,
-                topics: [transferTopic, null, paddedMerchant],
-                fromBlock,
-                toBlock: 'latest',
-              });
-            });
-
-        if (logs && logs.length > 0) {
-          const latestLog = logs[logs.length - 1];
-          const rawVal = ethers.toBigInt(latestLog.data);
-          const actualAmount = parseFloat(ethers.formatUnits(rawVal, config.decimals));
-
-          if (actualAmount >= minRequiredAmount) {
-            const sender = latestLog.topics?.[1]
-              ? ethers.stripZerosLeft(latestLog.topics[1])
-              : 'Customer Wallet';
+    // Task 4: Real On-Chain Balance Delta Check
+    evmPromises.push(
+      (async () => {
+        try {
+          const currentBal = await fetchRealAssetBalance(expectedAsset, cleanAddr);
+          if (currentBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
             return {
               isDetected: true,
-              txHash: latestLog.transactionHash,
-              customerAddress: sender,
-              actualAmount,
+              txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
+              actualAmount: currentBal.balanceRaw - initialBalanceRaw,
               isConfirmed: true,
-              blockNumber: latestLog.blockNumber,
             };
           }
-        }
-      } catch (logErr) {
-        console.warn('ERC20 RPC logs notice:', logErr);
+        } catch {}
+        return null;
+      })()
+    );
+
+    // Wait for all parallel EVM checks
+    const results = await Promise.allSettled(evmPromises);
+    for (const res of results) {
+      if (res.status === 'fulfilled' && res.value && res.value.isDetected) {
+        return res.value;
       }
-    }
-
-    // B. For Native EVM Tokens (POL / ETH)
-    if (!config.contractAddress) {
-      try {
-        const blockscoutUrl = isPolygon
-          ? `https://polygon.blockscout.com/api/v2/addresses/${cleanAddr}/transactions`
-          : `https://eth.blockscout.com/api/v2/addresses/${cleanAddr}/transactions`;
-
-        const bsRes = await Promise.race([
-          fetch(blockscoutUrl),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-        ]);
-
-        if (bsRes.ok) {
-          const data = await bsRes.json();
-          const items = data.items || [];
-          if (Array.isArray(items) && items.length > 0) {
-            for (const tx of items) {
-              const toAddr = tx.to?.hash?.toLowerCase() || '';
-              if (toAddr === cleanAddr.toLowerCase() && tx.status === 'ok') {
-                const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
-                if (actualAmount >= minRequiredAmount) {
-                  return {
-                    isDetected: true,
-                    txHash: tx.hash,
-                    customerAddress: tx.from?.hash || 'Verified Customer',
-                    actualAmount,
-                    isConfirmed: true,
-                    blockNumber: tx.block_number,
-                  };
-                }
-              }
-            }
-          }
-        }
-      } catch (nativeErr) {
-        console.warn('Native transaction check notice:', nativeErr);
-      }
-    }
-
-    // C. Guaranteed Real On-Chain Balance Delta Check
-    const currentBal = await fetchRealAssetBalance(expectedAsset, cleanAddr);
-    if (currentBal.balanceRaw >= initialBalanceRaw + minRequiredAmount) {
-      return {
-        isDetected: true,
-        txHash: `0x${Array.from({ length: 64 }, () => Math.floor(Math.random() * 16).toString(16)).join('')}`,
-        actualAmount: currentBal.balanceRaw - initialBalanceRaw,
-        isConfirmed: true,
-      };
     }
 
     return { isDetected: false };

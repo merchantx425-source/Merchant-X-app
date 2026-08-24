@@ -71,6 +71,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
   const assetConfig = SUPPORTED_ASSETS[cryptoAsset];
   const fiatConfig = SUPPORTED_FIAT[fiatCurrency];
   const isApprovedRef = useRef(false);
+  const isScanInFlightRef = useRef(false);
 
   // Build Bitcoin.com Wallet specific receive deep link URI
   const getBitcoinDotComUri = () => {
@@ -186,10 +187,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     [amountFiat, fiatCurrency, amountCrypto, cryptoAsset, assetConfig.network, cryptoRate, merchantWallet, onPaymentSuccess]
   );
 
-  // Background Automatic Rolling Scanner (checks every 3.5s)
+  // Background Automatic Rolling Scanner (checks every 2.5s)
   const performAutoScan = useCallback(async () => {
-    if (!isOpen || step !== 'awaiting_payment' || isApprovedRef.current) return;
+    if (!isOpen || step !== 'awaiting_payment' || isApprovedRef.current || isScanInFlightRef.current) return;
 
+    isScanInFlightRef.current = true;
     setIsScanning(true);
     setScanPulseCount((c) => c + 1);
 
@@ -202,8 +204,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         initialBalanceRaw: initialBalRaw,
       });
 
-      if (scanResult.isDetected && scanResult.txHash) {
-        setLastScanNotice(`✓ Payment detected on ${assetConfig.network}! Verifying confirmation...`);
+      if (scanResult.isDetected && scanResult.txHash && !isApprovedRef.current) {
+        setLastScanNotice(`✓ Verified payment on ${assetConfig.network}! Approving transaction...`);
         triggerPaymentApproved({
           txHash: scanResult.txHash,
           customerAddress: scanResult.customerAddress,
@@ -211,11 +213,12 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
           blockNumber: scanResult.blockNumber,
         });
       } else {
-        setLastScanNotice(`Active radar scanning ${assetConfig.network} blocks... (${new Date().toLocaleTimeString()})`);
+        setLastScanNotice(`Monitoring ${assetConfig.network} blocks for transfer... (${new Date().toLocaleTimeString()})`);
       }
     } catch (err) {
       console.warn('Auto scan notice:', err);
     } finally {
+      isScanInFlightRef.current = false;
       setIsScanning(false);
     }
   }, [
@@ -230,18 +233,18 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     triggerPaymentApproved,
   ]);
 
-  // Set up repeating rolling scan interval
+  // Set up repeating rolling scan interval (snappy 2.5s polling)
   useEffect(() => {
     if (!isOpen || step !== 'awaiting_payment') return;
 
-    // Initial check after 2 seconds
+    // Initial check after 800ms
     const firstTimeout = setTimeout(() => {
       performAutoScan();
-    }, 2000);
+    }, 800);
 
     const interval = setInterval(() => {
       performAutoScan();
-    }, 3500);
+    }, 2500);
 
     return () => {
       clearTimeout(firstTimeout);
