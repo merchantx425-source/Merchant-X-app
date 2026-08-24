@@ -19,6 +19,7 @@ import {
 } from './services/blockchainService';
 import { disconnectWalletKit, onAppKitAccountChange } from './config/appkit';
 import { LoadingScreen } from './components/LoadingScreen';
+import { NotificationBar } from './components/NotificationBar';
 import { POS } from './components/POS';
 import { TransactionHistory } from './components/TransactionHistory';
 import { Settings } from './components/Settings';
@@ -90,15 +91,15 @@ export default function App() {
 
   // 6. POS Keypad & Asset State
   const [amountInput, setAmountInput] = useState<string>('');
-  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('BTC');
+  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('VERSE');
 
   // 7. Live Rates & Balances State
   const [cryptoInFiatRates, setCryptoInFiatRates] = useState<Record<CryptoAsset, number>>({
-    BTC: 145000000,
-    ETH: 4850000,
-    USDT: 1560,
-    POL: 650,
-    VERSE: 0.28,
+    BTC: 102000000,
+    ETH: 4980000,
+    USDT: 1580,
+    POL: 660,
+    VERSE: 0.44,
   });
   const [ratesError, setRatesError] = useState<string | null>(null);
   const [lastRatesUpdated, setLastRatesUpdated] = useState<number>(Date.now());
@@ -139,6 +140,69 @@ export default function App() {
     }
   }, [settings.theme]);
 
+  // Fetch Live Rates
+  const refreshRates = useCallback(async () => {
+    try {
+      setRatesError(null);
+      const rates = await fetchLiveCryptoRates(settings.fiatCurrency);
+      setCryptoInFiatRates(rates.cryptoInFiat);
+      setLastRatesUpdated(Date.now());
+    } catch (err: any) {
+      console.warn('Rates refresh notice:', err);
+      setRatesError('Unable to load current price');
+    }
+  }, [settings.fiatCurrency]);
+
+  useEffect(() => {
+    refreshRates();
+    const interval = setInterval(refreshRates, 25000); // 25s auto-refresh
+    return () => clearInterval(interval);
+  }, [refreshRates]);
+
+  // Fetch Real On-Chain Balances for all 5 assets immediately
+  const refreshBalances = useCallback(async () => {
+    setIsRefreshingBalances(true);
+
+    const activeEvm = walletState.evmAddress || settings.customEvmReceivingAddress || null;
+    const activeBtc = walletState.btcAddress || settings.customBtcReceivingAddress || null;
+
+    const updatedBalances = { ...balances };
+
+    await Promise.all(
+      ASSET_ORDER.map(async (symbol) => {
+        const config = SUPPORTED_ASSETS[symbol];
+        const targetAddress = config.networkFamily === 'bitcoin' ? activeBtc : activeEvm;
+
+        if (targetAddress) {
+          const res = await fetchRealAssetBalance(symbol, targetAddress);
+          updatedBalances[symbol] = {
+            symbol,
+            balance: res.balance,
+            balanceRaw: res.balanceRaw,
+            isLoading: false,
+            error: res.error,
+          };
+        } else {
+          updatedBalances[symbol] = {
+            symbol,
+            balance: '0',
+            balanceRaw: 0,
+            isLoading: false,
+            error: null,
+          };
+        }
+      })
+    );
+
+    setBalances({ ...updatedBalances });
+    setIsRefreshingBalances(false);
+  }, [
+    walletState.evmAddress,
+    walletState.btcAddress,
+    settings.customBtcReceivingAddress,
+    settings.customEvmReceivingAddress,
+  ]);
+
   // Listen for real-time AppKit / WalletConnect account changes
   useEffect(() => {
     const unsubscribe = onAppKitAccountChange((account) => {
@@ -164,6 +228,17 @@ export default function App() {
       unsubscribe();
     };
   }, []);
+
+  // Trigger balance fetch immediately when wallet state changes
+  useEffect(() => {
+    refreshBalances();
+  }, [
+    walletState.evmAddress,
+    walletState.btcAddress,
+    walletState.isConnected,
+    settings.customBtcReceivingAddress,
+    settings.customEvmReceivingAddress,
+  ]);
 
   // Persist Settings
   const handleUpdateSettings = (newSettings: Partial<AppSettings>) => {
@@ -219,81 +294,6 @@ export default function App() {
       // Ignore
     }
   };
-
-  // Fetch Live Rates
-  const refreshRates = useCallback(async () => {
-    try {
-      setRatesError(null);
-      const rates = await fetchLiveCryptoRates(settings.fiatCurrency);
-      setCryptoInFiatRates(rates.cryptoInFiat);
-      setLastRatesUpdated(Date.now());
-    } catch (err: any) {
-      console.warn('Rates refresh failed:', err);
-      setRatesError('Unable to load current price');
-    }
-  }, [settings.fiatCurrency]);
-
-  useEffect(() => {
-    refreshRates();
-    const interval = setInterval(refreshRates, 30000); // 30s auto-refresh
-    return () => clearInterval(interval);
-  }, [refreshRates]);
-
-  // Fetch Real On-Chain Balances
-  const refreshBalances = useCallback(async () => {
-    setIsRefreshingBalances(true);
-
-    const updatedBalances = { ...balances };
-    for (const symbol of ASSET_ORDER) {
-      const config = SUPPORTED_ASSETS[symbol];
-      const address =
-        config.networkFamily === 'bitcoin'
-          ? walletState.btcAddress || settings.customBtcReceivingAddress
-          : walletState.evmAddress || settings.customEvmReceivingAddress;
-
-      updatedBalances[symbol] = {
-        ...updatedBalances[symbol],
-        isLoading: true,
-      };
-      setBalances({ ...updatedBalances });
-
-      if (address) {
-        const res = await fetchRealAssetBalance(symbol, address);
-        updatedBalances[symbol] = {
-          symbol,
-          balance: res.balance,
-          balanceRaw: res.balanceRaw,
-          isLoading: false,
-          error: res.error,
-        };
-      } else {
-        updatedBalances[symbol] = {
-          symbol,
-          balance: '0',
-          balanceRaw: 0,
-          isLoading: false,
-          error: null,
-        };
-      }
-    }
-
-    setBalances(updatedBalances);
-    setIsRefreshingBalances(false);
-  }, [
-    walletState.evmAddress,
-    walletState.btcAddress,
-    settings.customBtcReceivingAddress,
-    settings.customEvmReceivingAddress,
-  ]);
-
-  useEffect(() => {
-    refreshBalances();
-  }, [
-    walletState.evmAddress,
-    walletState.btcAddress,
-    settings.customBtcReceivingAddress,
-    settings.customEvmReceivingAddress,
-  ]);
 
   // Keypad Handlers
   const handleDigitPress = (digit: string) => {
@@ -443,7 +443,16 @@ export default function App() {
         <LoadingScreen onComplete={() => setIsLoadingApp(false)} />
       )}
 
-      {/* 2. Main Terminal Screen Container */}
+      {/* 2. Top Notification Bar */}
+      <NotificationBar
+        walletState={walletState}
+        selectedAsset={selectedAsset}
+        ratesError={ratesError}
+        onRefreshRates={refreshRates}
+        isRefreshingBalances={isRefreshingBalances}
+      />
+
+      {/* 3. Main Terminal Screen Container */}
       <main className="flex-1 w-full max-w-lg mx-auto flex flex-col justify-center">
         {activeTab === 'pos' && (
           <POS
@@ -489,14 +498,14 @@ export default function App() {
         )}
       </main>
 
-      {/* 3. Bottom Mobile Navigation */}
+      {/* 4. Bottom Mobile Navigation */}
       <Navbar
         currentTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
         language={settings.language}
       />
 
-      {/* 4. Wallet Connection Modal */}
+      {/* 5. Wallet Connection Modal */}
       <WalletModal
         isOpen={isWalletModalOpen}
         onClose={() => setIsWalletModalOpen(false)}
@@ -505,7 +514,7 @@ export default function App() {
         onDisconnectWallet={handleDisconnectWallet}
       />
 
-      {/* 5. Charge Flow & Blockchain Verification Modal */}
+      {/* 6. Charge Flow & Blockchain Verification Modal */}
       <ChargeFlowModal
         isOpen={isChargeModalOpen}
         onClose={() => setIsChargeModalOpen(false)}
@@ -519,7 +528,7 @@ export default function App() {
         language={settings.language}
       />
 
-      {/* 6. Merchant X Receipt Modal */}
+      {/* 7. Merchant X Receipt Modal */}
       <ReceiptModal
         isOpen={!!activeReceiptTx}
         onClose={() => setActiveReceiptTx(null)}

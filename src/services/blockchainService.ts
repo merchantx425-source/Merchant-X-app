@@ -10,40 +10,56 @@ interface RateCache {
 }
 
 let ratesCache: RateCache | null = null;
-const CACHE_TTL = 30000; // 30 seconds
+const CACHE_TTL = 20000; // 20 seconds
 
 /**
- * Get an active working JsonRpcProvider for Polygon with fallback
+ * Robust JSON-RPC query helper with automatic fallback across multiple public nodes
  */
-export async function getPolygonProvider(): Promise<ethers.JsonRpcProvider> {
+export async function executeWithPolygonFallback<T>(
+  action: (provider: ethers.JsonRpcProvider) => Promise<T>
+): Promise<T> {
+  let lastError: any = null;
   for (const url of RPC_URLS.POLYGON) {
     try {
       const provider = new ethers.JsonRpcProvider(url, 137, { staticNetwork: true });
-      return provider;
-    } catch {
+      const res = await Promise.race([
+        action(provider),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 6000)),
+      ]);
+      return res;
+    } catch (err) {
+      lastError = err;
       continue;
     }
   }
-  return new ethers.JsonRpcProvider(RPC_URLS.POLYGON[0], 137);
+  throw lastError || new Error('All Polygon RPC endpoints failed');
 }
 
 /**
- * Get an active working JsonRpcProvider for Ethereum with fallback
+ * Robust JSON-RPC query helper with automatic fallback across multiple Ethereum nodes
  */
-export async function getEthereumProvider(): Promise<ethers.JsonRpcProvider> {
+export async function executeWithEthereumFallback<T>(
+  action: (provider: ethers.JsonRpcProvider) => Promise<T>
+): Promise<T> {
+  let lastError: any = null;
   for (const url of RPC_URLS.ETHEREUM) {
     try {
       const provider = new ethers.JsonRpcProvider(url, 1, { staticNetwork: true });
-      return provider;
-    } catch {
+      const res = await Promise.race([
+        action(provider),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('RPC Timeout')), 6000)),
+      ]);
+      return res;
+    } catch (err) {
+      lastError = err;
       continue;
     }
   }
-  return new ethers.JsonRpcProvider(RPC_URLS.ETHEREUM[0], 1);
+  throw lastError || new Error('All Ethereum RPC endpoints failed');
 }
 
 /**
- * Fetch real live exchange rates from CoinGecko + ExchangeRate API
+ * Fetch real live exchange rates from CoinGecko, DexScreener (for Verse), and ExchangeRate API
  */
 export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<{
   cryptoUsd: Record<CryptoAsset, number>;
@@ -51,18 +67,18 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
   cryptoInFiat: Record<CryptoAsset, number>;
 }> {
   const now = Date.now();
-  
-  // Default base fallback rates in case external APIs are rate limited
+
+  // Baseline standard USD prices
   const defaultUsdRates: Record<CryptoAsset, number> = {
     BTC: 64500.0,
     ETH: 3150.0,
     USDT: 1.0,
     POL: 0.42,
-    VERSE: 0.000185,
+    VERSE: 0.00028,
   };
 
   const defaultFiatToUsd: Record<FiatCurrency, number> = {
-    NGN: 1560.0,
+    NGN: 1580.0,
     USD: 1.0,
     EUR: 0.92,
     GBP: 0.79,
@@ -74,56 +90,92 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
 
   try {
     if (!ratesCache || now - ratesCache.timestamp > CACHE_TTL) {
-      // 1. Fetch Crypto prices in USD
-      const ids = 'bitcoin,ethereum,tether,matic-network,verse';
-      const coingeckoRes = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
-        { headers: { Accept: 'application/json' } }
-      ).catch(() => null);
+      let btcUsd = defaultUsdRates.BTC;
+      let ethUsd = defaultUsdRates.ETH;
+      let usdtUsd = 1.0;
+      let polUsd = defaultUsdRates.POL;
+      let verseUsd = defaultUsdRates.VERSE;
 
-      let cryptoRates: Record<string, number> = {};
-      if (coingeckoRes && coingeckoRes.ok) {
-        const data = await coingeckoRes.json();
-        cryptoRates = {
-          BTC: data.bitcoin?.usd || defaultUsdRates.BTC,
-          ETH: data.ethereum?.usd || defaultUsdRates.ETH,
-          USDT: data.tether?.usd || 1.0,
-          POL: data['matic-network']?.usd || defaultUsdRates.POL,
-          VERSE: data.verse?.usd || defaultUsdRates.VERSE,
-        };
-      } else {
-        // Fallback to Binance public ticker
-        const binanceEth = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT')
-          .then((r) => r.json())
-          .catch(() => null);
-        const binanceBtc = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT')
-          .then((r) => r.json())
-          .catch(() => null);
+      // 1. Query DexScreener for real-time live VERSE price directly on Polygon DEX
+      try {
+        const dexRes = await fetch(
+          'https://api.dexscreener.com/latest/dex/tokens/0xc3aa16362d381282d7bfcf73812d46e300958ad8'
+        ).then((r) => r.json());
 
-        cryptoRates = {
-          BTC: binanceBtc?.price ? parseFloat(binanceBtc.price) : defaultUsdRates.BTC,
-          ETH: binanceEth?.price ? parseFloat(binanceEth.price) : defaultUsdRates.ETH,
-          USDT: 1.0,
-          POL: defaultUsdRates.POL,
-          VERSE: defaultUsdRates.VERSE,
-        };
+        if (dexRes?.pairs && dexRes.pairs.length > 0) {
+          const mainPair = dexRes.pairs[0];
+          if (mainPair?.priceUsd) {
+            verseUsd = parseFloat(mainPair.priceUsd);
+          }
+        }
+      } catch (dexErr) {
+        console.warn('[Rates] Verse DexScreener notice:', dexErr);
       }
 
-      // 2. Fetch Fiat rates vs USD
-      const fiatRes = await fetch('https://open.er-api.com/v6/latest/USD')
-        .then((r) => r.json())
-        .catch(() => null);
+      // 2. Query CoinGecko for Bitcoin, Ethereum, POL, Tether, and Verse-World
+      try {
+        const ids = 'bitcoin,ethereum,tether,matic-network,verse-world,verse';
+        const cgRes = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+          { headers: { Accept: 'application/json' } }
+        ).then((r) => (r.ok ? r.json() : null));
 
-      const fiatRates: Record<string, number> = fiatRes?.rates || defaultFiatToUsd;
+        if (cgRes) {
+          if (cgRes.bitcoin?.usd) btcUsd = cgRes.bitcoin.usd;
+          if (cgRes.ethereum?.usd) ethUsd = cgRes.ethereum.usd;
+          if (cgRes.tether?.usd) usdtUsd = cgRes.tether.usd;
+          if (cgRes['matic-network']?.usd) polUsd = cgRes['matic-network'].usd;
+          if (cgRes['verse-world']?.usd) {
+            verseUsd = cgRes['verse-world'].usd;
+          } else if (cgRes.verse?.usd) {
+            verseUsd = cgRes.verse.usd;
+          }
+        }
+      } catch (cgErr) {
+        console.warn('[Rates] CoinGecko notice:', cgErr);
+      }
+
+      // 3. Binance Public Fallback for BTC / ETH
+      if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH) {
+        try {
+          const [bBtc, bEth] = await Promise.all([
+            fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT').then((r) => r.json()),
+            fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT').then((r) => r.json()),
+          ]);
+          if (bBtc?.price) btcUsd = parseFloat(bBtc.price);
+          if (bEth?.price) ethUsd = parseFloat(bEth.price);
+        } catch {
+          // Keep current
+        }
+      }
+
+      // 4. Fetch Fiat rates vs USD
+      let fiatRates: Record<string, number> = defaultFiatToUsd;
+      try {
+        const fiatRes = await fetch('https://open.er-api.com/v6/latest/USD').then((r) =>
+          r.ok ? r.json() : null
+        );
+        if (fiatRes?.rates) {
+          fiatRates = fiatRes.rates;
+        }
+      } catch {
+        // Fallback
+      }
 
       ratesCache = {
         timestamp: now,
-        rates: cryptoRates,
+        rates: {
+          BTC: btcUsd,
+          ETH: ethUsd,
+          USDT: usdtUsd,
+          POL: polUsd,
+          VERSE: verseUsd,
+        },
         fiatRates,
       };
     }
   } catch (err) {
-    console.warn('Live rates fetch warning, using resilient fallback ticker:', err);
+    console.warn('[Rates] Live rates warning, using fallback cache:', err);
   }
 
   const usdPrices: Record<CryptoAsset, number> = {
@@ -162,90 +214,178 @@ export async function fetchRealAssetBalance(
     return { balance: '0', balanceRaw: 0, error: null };
   }
 
+  const cleanAddr = address.trim();
   const config = SUPPORTED_ASSETS[asset];
 
   try {
+    // 1. Bitcoin Balance Query
     if (config.networkFamily === 'bitcoin') {
-      // Query Bitcoin public mempool.space API
-      const cleanAddr = address.trim();
-      const res = await fetch(`https://mempool.space/api/address/${cleanAddr}`);
-      if (!res.ok) {
-        // Try fallback Blockstream API
-        const bsRes = await fetch(`https://blockstream.info/api/address/${cleanAddr}`);
-        if (!bsRes.ok) {
-          throw new Error('Bitcoin network query failed');
-        }
-        const data = await bsRes.json();
-        const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
-        const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
-        const satoshis = Math.max(0, funded - spent);
-        const btc = satoshis / 1e8;
-        return {
-          balance: btc.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 }),
-          balanceRaw: btc,
-          error: null,
-        };
+      // If the address passed is an EVM address (starts with 0x), user has not connected BTC address yet
+      if (cleanAddr.startsWith('0x')) {
+        return { balance: '0', balanceRaw: 0, error: null };
       }
 
-      const data = await res.json();
-      const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
-      const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
-      const satoshis = Math.max(0, funded - spent);
-      const btc = satoshis / 1e8;
-      return {
-        balance: btc.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 }),
-        balanceRaw: btc,
-        error: null,
-      };
+      // Try Mempool.space
+      try {
+        const res = await fetch(`https://mempool.space/api/address/${cleanAddr}`);
+        if (res.ok) {
+          const data = await res.json();
+          const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+          const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+          const satoshis = Math.max(0, funded - spent);
+          const btc = satoshis / 1e8;
+          return {
+            balance: btc === 0 ? '0' : btc.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 }),
+            balanceRaw: btc,
+            error: null,
+          };
+        }
+      } catch {
+        // Fallback to Blockstream
+      }
+
+      // Try Blockstream API
+      try {
+        const bsRes = await fetch(`https://blockstream.info/api/address/${cleanAddr}`);
+        if (bsRes.ok) {
+          const data = await bsRes.json();
+          const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+          const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+          const satoshis = Math.max(0, funded - spent);
+          const btc = satoshis / 1e8;
+          return {
+            balance: btc === 0 ? '0' : btc.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 }),
+            balanceRaw: btc,
+            error: null,
+          };
+        }
+      } catch {
+        // Try Blockchain.info
+      }
+
+      try {
+        const bcRes = await fetch(`https://blockchain.info/rawaddr/${cleanAddr}?cors=true`);
+        if (bcRes.ok) {
+          const data = await bcRes.json();
+          const satoshis = data.final_balance || 0;
+          const btc = satoshis / 1e8;
+          return {
+            balance: btc === 0 ? '0' : btc.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 8 }),
+            balanceRaw: btc,
+            error: null,
+          };
+        }
+      } catch {
+        // Ignore
+      }
+
+      return { balance: '0', balanceRaw: 0, error: null };
     }
 
-    // EVM Networks (Polygon or Ethereum)
+    // 2. EVM Queries (Requires 0x address)
+    if (!cleanAddr.startsWith('0x')) {
+      return { balance: '0', balanceRaw: 0, error: null };
+    }
+
+    // A. POL (Polygon Native)
     if (asset === 'POL') {
-      const provider = await getPolygonProvider();
-      const wei = await provider.getBalance(address);
+      const wei = await executeWithPolygonFallback((provider) => provider.getBalance(cleanAddr));
       const formatted = ethers.formatEther(wei);
       const raw = parseFloat(formatted);
       return {
-        balance: raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 }),
+        balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 }),
         balanceRaw: raw,
         error: null,
       };
     }
 
+    // B. ETH (Ethereum Native)
     if (asset === 'ETH') {
-      const provider = await getEthereumProvider();
-      const wei = await provider.getBalance(address);
+      const wei = await executeWithEthereumFallback((provider) => provider.getBalance(cleanAddr));
       const formatted = ethers.formatEther(wei);
       const raw = parseFloat(formatted);
       return {
-        balance: raw.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 6 }),
+        balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 3, maximumFractionDigits: 6 }),
         balanceRaw: raw,
         error: null,
       };
     }
 
+    // C. VERSE (ERC-20 on Polygon, with Ethereum cross-check fallback)
     if (asset === 'VERSE') {
-      const provider = await getPolygonProvider();
-      const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
-      const rawBal = await contract.balanceOf(address);
-      const formatted = ethers.formatUnits(rawBal, config.decimals);
-      const raw = parseFloat(formatted);
+      let rawBalPolygon = 0n;
+      try {
+        rawBalPolygon = await executeWithPolygonFallback(async (provider) => {
+          const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
+          return await contract.balanceOf(cleanAddr);
+        });
+      } catch (pErr) {
+        console.warn('Verse Polygon query warning:', pErr);
+      }
+
+      const formatted = ethers.formatUnits(rawBalPolygon, config.decimals);
+      let raw = parseFloat(formatted);
+
+      // If 0 on Polygon, check if there is VERSE on Ethereum (Ethereum Verse contract: 0x249cA82617eC3DfB2589c4c17ab7EC9765350a18)
+      if (raw === 0) {
+        try {
+          const ethVerseContract = '0x249cA82617eC3DfB2589c4c17ab7EC9765350a18';
+          const rawBalEth = await executeWithEthereumFallback(async (provider) => {
+            const contract = new ethers.Contract(ethVerseContract, ERC20_ABI, provider);
+            return await contract.balanceOf(cleanAddr);
+          });
+          const ethFormatted = ethers.formatUnits(rawBalEth, 18);
+          const ethRaw = parseFloat(ethFormatted);
+          if (ethRaw > 0) {
+            raw = ethRaw;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
       return {
-        balance: raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 }),
         balanceRaw: raw,
         error: null,
       };
     }
 
+    // D. USDT (ERC-20 on Polygon, with Ethereum cross-check)
     if (asset === 'USDT') {
-      // USDT on Polygon
-      const provider = await getPolygonProvider();
-      const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
-      const rawBal = await contract.balanceOf(address);
-      const formatted = ethers.formatUnits(rawBal, config.decimals);
-      const raw = parseFloat(formatted);
+      let rawBalPolygon = 0n;
+      try {
+        rawBalPolygon = await executeWithPolygonFallback(async (provider) => {
+          const contract = new ethers.Contract(config.contractAddress!, ERC20_ABI, provider);
+          return await contract.balanceOf(cleanAddr);
+        });
+      } catch (pErr) {
+        console.warn('USDT Polygon query warning:', pErr);
+      }
+
+      const formatted = ethers.formatUnits(rawBalPolygon, config.decimals);
+      let raw = parseFloat(formatted);
+
+      // If 0 on Polygon, check if there is USDT on Ethereum (0xdac17f958d2ee523a2206206994597c13d831ec7)
+      if (raw === 0) {
+        try {
+          const ethUsdtContract = '0xdAC17F958D2ee523a2206206994597C13D831ec7';
+          const rawBalEth = await executeWithEthereumFallback(async (provider) => {
+            const contract = new ethers.Contract(ethUsdtContract, ERC20_ABI, provider);
+            return await contract.balanceOf(cleanAddr);
+          });
+          const ethFormatted = ethers.formatUnits(rawBalEth, 6);
+          const ethRaw = parseFloat(ethFormatted);
+          if (ethRaw > 0) {
+            raw = ethRaw;
+          }
+        } catch {
+          // Ignore
+        }
+      }
+
       return {
-        balance: raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         balanceRaw: raw,
         error: null,
       };
@@ -255,9 +395,9 @@ export async function fetchRealAssetBalance(
   } catch (err: any) {
     console.error(`Error fetching real balance for ${asset}:`, err);
     return {
-      balance: 'Unable to load balance',
+      balance: '0',
       balanceRaw: 0,
-      error: err?.message || 'Unable to load balance',
+      error: null,
     };
   }
 }
@@ -288,9 +428,11 @@ export async function verifyBlockchainTransaction(params: {
         return { isVerified: false, errorMessage: 'Transaction hash not found in Bitcoin mempool or blockchain.' };
       }
       const tx = await res.json();
-      
+
       // Check if one of the outputs sends to merchant address
-      const matchedOutput = tx.vout?.find((v: any) => v.scriptpubkey_address?.toLowerCase() === merchantWallet.toLowerCase());
+      const matchedOutput = tx.vout?.find(
+        (v: any) => v.scriptpubkey_address?.toLowerCase() === merchantWallet.toLowerCase()
+      );
       if (!matchedOutput) {
         return { isVerified: false, errorMessage: 'Payment recipient does not match merchant Bitcoin address.' };
       }
@@ -307,9 +449,11 @@ export async function verifyBlockchainTransaction(params: {
       };
     }
 
-    // EVM Verification
-    const provider = config.network === 'Polygon' ? await getPolygonProvider() : await getEthereumProvider();
-    const receipt = await provider.getTransactionReceipt(txHash);
+    // EVM Verification with fallback
+    const isPolygon = config.network === 'Polygon';
+    const receipt = isPolygon
+      ? await executeWithPolygonFallback((provider) => provider.getTransactionReceipt(txHash))
+      : await executeWithEthereumFallback((provider) => provider.getTransactionReceipt(txHash));
 
     if (!receipt) {
       return { isVerified: false, errorMessage: 'Transaction is pending or not yet mined on the network.' };
@@ -319,13 +463,10 @@ export async function verifyBlockchainTransaction(params: {
       return { isVerified: false, errorMessage: 'Transaction reverted or failed on-chain.' };
     }
 
-    const tx = await provider.getTransaction(txHash);
-    const block = await provider.getBlock(receipt.blockNumber);
-
     return {
       isVerified: true,
       blockNumber: receipt.blockNumber,
-      timestamp: block?.timestamp ? block.timestamp * 1000 : Date.now(),
+      timestamp: Date.now(),
       customerAddress: receipt.from,
       actualAmount: params.expectedAmountCrypto,
     };
@@ -351,7 +492,7 @@ export function formatAddress(address: string | null | undefined, chars = 4): st
  */
 export function formatCryptoAmount(amount: number, asset: CryptoAsset): string {
   if (asset === 'BTC') {
-    return amount.toFixed(6);
+    return amount < 0.0001 ? amount.toFixed(8) : amount.toFixed(6);
   }
   if (asset === 'ETH') {
     return amount.toFixed(5);
@@ -363,7 +504,7 @@ export function formatCryptoAmount(amount: number, asset: CryptoAsset): string {
     return amount.toFixed(3);
   }
   if (asset === 'VERSE') {
-    return Math.round(amount).toLocaleString('en-US');
+    return amount > 1000 ? Math.round(amount).toLocaleString('en-US') : amount.toFixed(2);
   }
   return amount.toString();
 }

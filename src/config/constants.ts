@@ -10,9 +10,10 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     network: 'Polygon',
     networkFamily: 'evm',
     decimals: 18,
-    contractAddress: '0xc2e9678A71e50E5AEd036e00e9c5caeb1aC55270',
-    coingeckoId: 'verse',
-    iconColor: '#0085FF',
+    // Canonical Verse contract address on Polygon
+    contractAddress: '0xc3aa16362d381282d7bfcf73812d46e300958ad8',
+    coingeckoId: 'verse-world',
+    iconColor: '#00D2FF',
     badge: 'Polygon',
   },
   POL: {
@@ -31,6 +32,7 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     network: 'Polygon',
     networkFamily: 'evm',
     decimals: 6,
+    // Canonical USDT contract address on Polygon (PoS)
     contractAddress: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
     coingeckoId: 'tether',
     iconColor: '#26A17B',
@@ -111,19 +113,21 @@ export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
   },
 };
 
-// Public reliable RPC Endpoints
+// Public reliable high-availability RPC Endpoints
 export const RPC_URLS = {
   POLYGON: [
-    'https://polygon-rpc.com',
-    'https://rpc.ankr.com/polygon',
-    'https://polygon.drpc.org',
+    'https://polygon-bor-rpc.publicnode.com',
     'https://1rpc.io/matic',
+    'https://polygon.llamarpc.com',
+    'https://rpc.ankr.com/polygon',
+    'https://polygon-rpc.com',
   ],
   ETHEREUM: [
+    'https://eth.llamarpc.com',
+    'https://ethereum-rpc.publicnode.com',
+    'https://1rpc.io/eth',
     'https://cloudflare-eth.com',
     'https://rpc.ankr.com/eth',
-    'https://eth.drpc.org',
-    'https://1rpc.io/eth',
   ],
   BITCOIN_APIS: [
     'https://mempool.space/api',

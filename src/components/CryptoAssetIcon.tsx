@@ -4,7 +4,7 @@ import { CryptoAsset } from '../types/merchant';
 interface CryptoAssetIconProps {
   asset: CryptoAsset;
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export const CryptoAssetIcon: React.FC<CryptoAssetIconProps> = ({
@@ -16,11 +16,69 @@ export const CryptoAssetIcon: React.FC<CryptoAssetIconProps> = ({
     sm: 'w-4 h-4',
     md: 'w-6 h-6',
     lg: 'w-8 h-8',
+    xl: 'w-10 h-10',
   };
 
   const dim = sizeClasses[size];
 
   switch (asset) {
+    case 'VERSE':
+      return (
+        /* Official Verse Logo constructed with radiant Cyan -> Purple -> Magenta gradient and dual-pill white 'V' */
+        <svg
+          viewBox="0 0 100 100"
+          className={`${dim} ${className} shrink-0`}
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient
+              id="verse-bg-gradient"
+              x1="0%"
+              y1="0%"
+              x2="100%"
+              y2="100%"
+            >
+              <stop offset="0%" stopColor="#00D2FF" />
+              <stop offset="35%" stopColor="#0072FF" />
+              <stop offset="65%" stopColor="#8A2BE2" />
+              <stop offset="100%" stopColor="#FF007F" />
+            </linearGradient>
+            <filter id="verse-glow" x="-10%" y="-10%" width="120%" height="120%">
+              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#8A2BE2" floodOpacity="0.4" />
+            </filter>
+          </defs>
+
+          {/* Background Gradient Circle */}
+          <circle cx="50" cy="50" r="48" fill="url(#verse-bg-gradient)" filter="url(#verse-glow)" />
+
+          {/* Inner Stylized Verse 'V' */}
+          <g transform="translate(0, 0)">
+            {/* Left White Pill */}
+            <rect
+              x="26"
+              y="32"
+              width="18"
+              height="40"
+              rx="9"
+              transform="rotate(-30 35 52)"
+              fill="#FFFFFF"
+            />
+            {/* Right Translucent Glowing Pill Overlapping to create 'V' */}
+            <rect
+              x="56"
+              y="32"
+              width="18"
+              height="40"
+              rx="9"
+              transform="rotate(30 65 52)"
+              fill="#FFFFFF"
+              fillOpacity="0.78"
+            />
+          </g>
+        </svg>
+      );
+
     case 'BTC':
       return (
         <svg
@@ -86,30 +144,6 @@ export const CryptoAssetIcon: React.FC<CryptoAssetIconProps> = ({
             d="M21.2 11.5L16.6 8.8c-.4-.2-.8-.2-1.2 0L10.8 11.5c-.4.2-.6.6-.6 1.1v5.4c0 .4.2.8.6 1.1l4.6 2.7c.4.2.8.2 1.2 0l4.6-2.7c.4-.2.6-.6.6-1.1v-5.4c0-.5-.2-.9-.6-1.1zm-5.2 9.5l-3.8-2.2v-4.5l3.8 2.2v4.5zm1-5.7l-3.8-2.2 3.8-2.2 3.8 2.2-3.8 2.2zm4.8 1.2l-3.8 2.2v-4.5l3.8-2.2v4.5z"
             fill="#FFFFFF"
           />
-        </svg>
-      );
-
-    case 'VERSE':
-      return (
-        <svg
-          viewBox="0 0 32 32"
-          className={`${dim} ${className} shrink-0`}
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <circle cx="16" cy="16" r="16" fill="#0A0B0E" />
-          <circle cx="16" cy="16" r="15" stroke="#F59E0B" strokeWidth="1.5" />
-          {/* Stylized Verse V Geometric Mark */}
-          <path
-            d="M9 10.5L16 23.5L23 10.5H19.5L16 17.5L12.5 10.5H9Z"
-            fill="url(#verse-grad)"
-          />
-          <defs>
-            <linearGradient id="verse-grad" x1="9" y1="10.5" x2="23" y2="23.5" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#F59E0B" />
-              <stop offset="1" stopColor="#EC4899" />
-            </linearGradient>
-          </defs>
         </svg>
       );
 
