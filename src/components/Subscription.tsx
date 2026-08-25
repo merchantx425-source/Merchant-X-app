@@ -295,7 +295,11 @@ export const Subscription: React.FC<SubscriptionProps> = ({
                 </li>
                 <li className="flex items-start gap-1.5 text-zinc-400">
                   <span className="text-zinc-600 font-bold">✕</span>
-                  <span>Requires Pro after 10</span>
+                  <span>Custom themes & notes (Pro)</span>
+                </li>
+                <li className="flex items-start gap-1.5 text-zinc-400">
+                  <span className="text-zinc-600 font-bold">✕</span>
+                  <span>Requires Pro after 10 tx</span>
                 </li>
               </ul>
             </div>

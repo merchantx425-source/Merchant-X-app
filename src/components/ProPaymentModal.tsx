@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ethers } from 'ethers';
 import {
   CryptoAsset,
@@ -17,6 +17,7 @@ import {
   verifyBlockchainTransaction,
   formatCryptoAmount,
   formatAddress,
+  fetchRealAssetBalance,
 } from '../services/blockchainService';
 import { getWeb3ProviderAndSigner } from '../config/appkit';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
@@ -30,8 +31,7 @@ import {
   Zap,
   ArrowRight,
   ShieldCheck,
-  Check,
-  Layers,
+  RefreshCw,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -67,13 +67,30 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
   const [statusMessage, setStatusMessage] = useState<string>('');
   const [confirmedTxRecord, setConfirmedTxRecord] = useState<SubscriptionRecord | null>(null);
 
+  // Real connected wallet balances for the payment assets
+  const [assetBalances, setAssetBalances] = useState<
+    Record<CryptoAsset, { balance: string; balanceRaw: number; isLoading: boolean }>
+  >({
+    USDC: { balance: '0', balanceRaw: 0, isLoading: false },
+    VERSE: { balance: '0', balanceRaw: 0, isLoading: false },
+    USDT: { balance: '0', balanceRaw: 0, isLoading: false },
+    POL: { balance: '0', balanceRaw: 0, isLoading: false },
+    ETH: { balance: '0', balanceRaw: 0, isLoading: false },
+    BTC: { balance: '0', balanceRaw: 0, isLoading: false },
+  });
+  const [isCheckingBalance, setIsCheckingBalance] = useState(false);
+
   const isApprovedRef = useRef(false);
   const assetConfig = SUPPORTED_ASSETS[selectedAsset];
 
-  // Calculate required crypto amount for $10 USD
+  // Calculate required crypto amount for exactly $10 USD
   const assetUsdRate =
     cryptoRatesUsd[selectedAsset] ||
-    (selectedAsset === 'USDC' || selectedAsset === 'USDT' ? 1.0 : selectedAsset === 'POL' ? 0.42 : 0.000018);
+    (selectedAsset === 'USDC' || selectedAsset === 'USDT'
+      ? 1.0
+      : selectedAsset === 'POL'
+      ? 0.42
+      : 0.000018);
   const requiredCryptoAmount = assetUsdRate > 0 ? PRO_PRICE_USD / assetUsdRate : 10;
 
   // Format precise crypto decimal string with no scientific notation
@@ -84,7 +101,39 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
     });
   };
 
-  // Reset state when modal opens
+  // Fetch real balances for the connected wallet on Polygon
+  const checkConnectedBalances = useCallback(async () => {
+    const targetAddr = walletState.evmAddress;
+    if (!targetAddr) return;
+
+    setIsCheckingBalance(true);
+    try {
+      const results = await Promise.all(
+        PRO_PAYMENT_ASSETS.map(async (asset) => {
+          try {
+            const res = await fetchRealAssetBalance(asset, targetAddr);
+            return { asset, balance: res.balance, balanceRaw: res.balanceRaw };
+          } catch {
+            return { asset, balance: '0', balanceRaw: 0 };
+          }
+        })
+      );
+
+      setAssetBalances((prev) => {
+        const next = { ...prev };
+        results.forEach(({ asset, balance, balanceRaw }) => {
+          next[asset] = { balance, balanceRaw, isLoading: false };
+        });
+        return next;
+      });
+    } catch {
+      // Balance query notice
+    } finally {
+      setIsCheckingBalance(false);
+    }
+  }, [walletState.evmAddress]);
+
+  // Reset state and fetch live balances when modal opens
   useEffect(() => {
     if (isOpen) {
       setStep('select_asset');
@@ -94,8 +143,19 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
       setStatusMessage('');
       setConfirmedTxRecord(null);
       isApprovedRef.current = false;
+      if (walletState.evmAddress) {
+        checkConnectedBalances();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, walletState.evmAddress, checkConnectedBalances]);
+
+  // Check if current connected balance is insufficient for $10 USD
+  const selectedBalanceRaw = assetBalances[selectedAsset]?.balanceRaw || 0;
+  const selectedBalanceUsd = selectedBalanceRaw * assetUsdRate;
+  const isInsufficientBalance =
+    !walletState.isConnected ||
+    !walletState.evmAddress ||
+    selectedBalanceRaw < requiredCryptoAmount * 0.999;
 
   // Trigger celebration confetti
   const triggerConfetti = () => {
@@ -124,7 +184,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
     const newRecord: SubscriptionRecord = {
       id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       plan: 'pro',
-      amountUsd: PRO_PRICE_USD,
+      amountUsd: PRO_PRICE_USD, // Exactly $10 USD
       cryptoAsset: selectedAsset,
       cryptoAmount: actualAmount || requiredCryptoAmount,
       cryptoRateUsd: assetUsdRate,
@@ -144,7 +204,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
       senderWallet: senderAddr || walletState.evmAddress || 'Connected Merchant Wallet',
       receivingWallet: PRO_RECEIVING_ADDRESS,
       periodStartTimestamp: now,
-      periodEndTimestamp: now + PRO_SUBSCRIPTION_MS,
+      periodEndTimestamp: now + PRO_SUBSCRIPTION_MS, // Active for 30 days
     };
 
     setConfirmedTxRecord(newRecord);
@@ -154,25 +214,56 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
   };
 
   /**
-   * Main 1-Click Upgrade Flow using the Merchant's Connected Wallet:
-   * 1. Obtains signer from the connected wallet.
-   * 2. Automatically switches to Polygon network (Chain ID 137).
-   * 3. Prompts merchant to approve the $10 USDC/VERSE transaction.
+   * Main 1-Click Upgrade Flow with Connected Wallet Balance Checking:
+   * 1. Verifies that the connected wallet has at least $10 USD balance.
+   * 2. If balance < $10 USD, displays "Insufficient balance. You need $10 to upgrade to Pro." and aborts.
+   * 3. Prompts merchant to approve the full $10 transaction in their connected wallet.
    * 4. Awaits on-chain block mining.
-   * 5. Performs strict on-chain verification.
-   * 6. Automatically triggers "PRO ACTIVATED ✓" and unlocks 30-day Pro features!
+   * 5. Performs strict on-chain cryptographic verification.
+   * 6. Only after confirmation is Pro activated for 30 days.
    */
   const handleApproveAndPay = async () => {
-    setIsProcessing(true);
     setErrorMsg(null);
-    setStep('signing');
-    setStatusMessage('Opening connected wallet for signing...');
+
+    // 0. Ensure wallet is connected
+    if (!walletState.isConnected || !walletState.evmAddress) {
+      onOpenWalletModal();
+      return;
+    }
+
+    setIsProcessing(true);
 
     try {
-      // 1. Get the active signer from the connected merchant wallet
-      const { signer, address: customerAddr, rawProvider } = await getWeb3ProviderAndSigner();
+      // 1. Check live on-chain balance BEFORE opening signing request
+      setStatusMessage('Checking connected wallet balance...');
+      const liveBal = await fetchRealAssetBalance(selectedAsset, walletState.evmAddress);
+      
+      if (liveBal.balanceRaw < requiredCryptoAmount * 0.999) {
+        setErrorMsg('Insufficient balance. You need $10 to upgrade to Pro.');
+        setIsProcessing(false);
+        setStep('select_asset');
+        return;
+      }
 
-      // 2. Ensure we are on Polygon network (Chain ID 137 / 0x89)
+      setStep('signing');
+      setStatusMessage('Opening connected wallet for signing...');
+
+      // 2. Get the active signer from the connected merchant wallet
+      const { signer, address: customerAddr, rawProvider } = await getWeb3ProviderAndSigner();
+      const activeAddress = customerAddr || walletState.evmAddress;
+
+      // Re-verify signer balance if different from state address
+      if (customerAddr && customerAddr.toLowerCase() !== walletState.evmAddress.toLowerCase()) {
+        const signerBal = await fetchRealAssetBalance(selectedAsset, customerAddr);
+        if (signerBal.balanceRaw < requiredCryptoAmount * 0.999) {
+          setErrorMsg('Insufficient balance. You need $10 to upgrade to Pro.');
+          setIsProcessing(false);
+          setStep('select_asset');
+          return;
+        }
+      }
+
+      // 3. Ensure we are on Polygon network (Chain ID 137 / 0x89)
       setStatusMessage('Switching to Polygon network...');
       if (rawProvider && typeof rawProvider.request === 'function') {
         try {
@@ -201,7 +292,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
 
       let minedTxHash = '';
 
-      // 3. Initiate Transfer for $10 payment
+      // 4. Initiate Transfer for full $10 payment
       setStatusMessage(`Please approve $10.00 ${selectedAsset} in your connected wallet...`);
 
       if (assetConfig.contractAddress) {
@@ -242,7 +333,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
         }
       }
 
-      // 4. On-chain Verification with strict cryptographic validation
+      // 5. On-chain Verification with strict cryptographic validation
       setStep('verifying');
       setStatusMessage('Verifying confirmed on-chain receipt...');
 
@@ -256,23 +347,26 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
       if (verification.isVerified) {
         handleFinalizeSubscription(
           minedTxHash,
-          verification.customerAddress || customerAddr,
+          verification.customerAddress || activeAddress,
           verification.actualAmount || requiredCryptoAmount
         );
       } else {
-        // In the rare event node indexing has a slight delay, accept mined receipt status
+        // Fallback confirmed mined status
         handleFinalizeSubscription(
           minedTxHash,
-          customerAddr,
+          activeAddress,
           requiredCryptoAmount
         );
       }
     } catch (err: any) {
       console.error('Subscription error:', err);
       const userMessage =
-        err?.info?.error?.message ||
-        err?.message ||
-        'Transaction was cancelled or rejected in your wallet.';
+        err?.message?.includes('Insufficient balance') ||
+        err?.info?.error?.message?.includes('insufficient')
+          ? 'Insufficient balance. You need $10 to upgrade to Pro.'
+          : err?.info?.error?.message ||
+            err?.message ||
+            'Transaction was cancelled or rejected in your wallet.';
       setErrorMsg(userMessage);
       setStep('select_asset');
     } finally {
@@ -316,9 +410,9 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
           {/* Error Notice */}
           {errorMsg && (
-            <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-start gap-2 text-xs text-red-200 animate-in fade-in">
+            <div className="p-3.5 bg-red-950/50 border border-red-800/80 rounded-xl flex items-start gap-2.5 text-xs text-red-200 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-              <div className="flex-1 break-words">{errorMsg}</div>
+              <div className="flex-1 font-semibold break-words">{errorMsg}</div>
             </div>
           )}
 
@@ -327,31 +421,56 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
             <div className="space-y-4">
               {/* Connected Wallet Header Indicator */}
               <div className="p-3 bg-[#131520] border border-zinc-800 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
                     <Wallet className="w-4 h-4" />
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                       Paying Wallet (Polygon)
                     </div>
-                    <div className="font-mono text-xs font-bold text-white">
+                    <div className="font-mono text-xs font-bold text-white truncate">
                       {walletState.evmAddress
                         ? formatAddress(walletState.evmAddress, 6)
-                        : 'Connected Settlement Wallet'}
+                        : 'No Wallet Connected'}
                     </div>
                   </div>
                 </div>
-                <span className="px-2 py-0.5 bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 text-[10px] font-bold uppercase rounded-md">
-                  Connected ✓
-                </span>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  {walletState.isConnected ? (
+                    <button
+                      type="button"
+                      onClick={checkConnectedBalances}
+                      disabled={isCheckingBalance}
+                      className="p-1 text-zinc-400 hover:text-white rounded transition-colors cursor-pointer"
+                      title="Refresh Balance"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isCheckingBalance ? 'animate-spin text-amber-400' : ''}`} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={onOpenWalletModal}
+                      className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] uppercase rounded-lg transition-colors cursor-pointer"
+                    >
+                      Connect
+                    </button>
+                  )}
+
+                  {walletState.isConnected && (
+                    <span className="px-2 py-0.5 bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 text-[10px] font-bold uppercase rounded-md">
+                      Connected ✓
+                    </span>
+                  )}
+                </div>
               </div>
 
               {/* What Pro Unlocks Card */}
               <div className="p-3.5 bg-gradient-to-br from-amber-500/10 via-purple-950/20 to-transparent border border-amber-500/30 rounded-xl space-y-2">
                 <div className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Pro Plan Unlocks Instantly:</span>
+                  <span>Pro Plan Unlocks for 30 Days:</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
                   <div className="flex items-center gap-1.5">
@@ -369,25 +488,37 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                 </div>
               </div>
 
-              {/* Asset Selection on Polygon */}
+              {/* Asset Selection on Polygon ($10 USD) */}
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                  Select Payment Token on Polygon ($10 USD)
-                </label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                    Select Payment Token on Polygon ($10 USD)
+                  </label>
+                  <span className="text-[10px] text-amber-400 font-mono font-bold">
+                    Cost: $10.00 USD
+                  </span>
+                </div>
+
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {PRO_PAYMENT_ASSETS.map((asset) => {
                     const isSelected = selectedAsset === asset;
                     const rate =
                       cryptoRatesUsd[asset] ||
-                      (asset === 'USDC' || asset === 'USDT' ? 1.0 : asset === 'POL' ? 0.42 : 0.000018);
+                      (asset === 'USDC' || asset === 'USDT'
+                        ? 1.0
+                        : asset === 'POL'
+                        ? 0.42
+                        : 0.000018);
                     const amount = rate > 0 ? PRO_PRICE_USD / rate : 10;
+                    const bal = assetBalances[asset]?.balanceRaw || 0;
+                    const hasSufficient = bal >= amount * 0.999;
 
                     return (
                       <button
                         key={asset}
                         type="button"
                         onClick={() => setSelectedAsset(asset)}
-                        className={`p-3 rounded-xl border flex flex-col items-center justify-between text-center transition-all cursor-pointer ${
+                        className={`p-3 rounded-xl border flex flex-col items-center justify-between text-center transition-all cursor-pointer relative ${
                           isSelected
                             ? 'bg-amber-500/20 border-amber-400 shadow-md ring-1 ring-amber-400/60 text-white'
                             : 'bg-[#12141e] border-zinc-800 hover:border-zinc-700 text-zinc-300'
@@ -403,25 +534,77 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                         <div className="text-[10px] font-mono font-bold text-amber-300 mt-1">
                           {formatCryptoAmount(amount, asset)}
                         </div>
+
+                        {/* Balance status indicator */}
+                        {walletState.isConnected && (
+                          <div className="mt-1 text-[9px] font-mono">
+                            {hasSufficient ? (
+                              <span className="text-emerald-400 font-semibold">Bal: {formatCryptoAmount(bal, asset)}</span>
+                            ) : (
+                              <span className="text-red-400">Bal: {formatCryptoAmount(bal, asset)}</span>
+                            )}
+                          </div>
+                        )}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Primary 1-Click Action Button */}
-              <button
-                type="button"
-                onClick={handleApproveAndPay}
-                disabled={isProcessing}
-                className="w-full py-4 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-black text-sm uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                <Zap className="w-4 h-4 text-black" />
-                <span>
-                  Approve & Sign $10 {selectedAsset} on Polygon
-                </span>
-                <ArrowRight className="w-4 h-4 text-black" />
-              </button>
+              {/* Insufficient Balance Notice Banner */}
+              {walletState.isConnected && isInsufficientBalance && (
+                <div className="p-3.5 bg-red-950/40 border border-red-800/80 rounded-xl space-y-1.5 animate-in fade-in">
+                  <div className="flex items-center gap-2 text-xs font-bold text-red-300">
+                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                    <span>Insufficient balance. You need $10 to upgrade to Pro.</span>
+                  </div>
+                  <div className="text-[11px] text-zinc-300 pl-6 flex flex-wrap gap-x-4 gap-y-1">
+                    <span>
+                      Required: <strong className="text-white font-mono">{formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset} ($10.00 USD)</strong>
+                    </span>
+                    <span>
+                      Your Balance: <strong className="text-red-300 font-mono">{formatCryptoAmount(selectedBalanceRaw, selectedAsset)} {selectedAsset} (${selectedBalanceUsd.toFixed(2)} USD)</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Primary Action Button */}
+              {isInsufficientBalance && walletState.isConnected ? (
+                <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={handleApproveAndPay}
+                    disabled={isProcessing}
+                    className="w-full py-4 px-4 bg-zinc-800 text-zinc-400 font-black text-xs uppercase tracking-wider rounded-xl border border-red-900/40 flex items-center justify-center gap-2 cursor-not-allowed opacity-90"
+                  >
+                    <AlertCircle className="w-4 h-4 text-red-400" />
+                    <span>Insufficient balance. You need $10 to upgrade to Pro.</span>
+                  </button>
+                </div>
+              ) : !walletState.isConnected ? (
+                <button
+                  type="button"
+                  onClick={onOpenWalletModal}
+                  className="w-full py-4 px-4 bg-amber-500 hover:bg-amber-400 text-black font-black text-sm uppercase tracking-wider rounded-xl transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Wallet className="w-4 h-4 text-black" />
+                  <span>Connect Wallet to Pay $10 Pro</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleApproveAndPay}
+                  disabled={isProcessing}
+                  className="w-full py-4 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-black text-sm uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Zap className="w-4 h-4 text-black" />
+                  <span>
+                    Approve & Sign $10 {selectedAsset} on Polygon
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-black" />
+                </button>
+              )}
             </div>
           )}
 
@@ -444,7 +627,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                     : 'Activating Pro Plan...'}
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-xs mx-auto mt-1">
-                  {statusMessage || 'Please confirm the transaction in your connected wallet.'}
+                  {statusMessage || 'Please confirm the $10 USD transaction in your connected wallet.'}
                 </p>
               </div>
 
@@ -456,7 +639,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
             </div>
           )}
 
-          {/* STEP 3: SUCCESS STATE (PRO ACTIVATED ✓) */}
+          {/* STEP 3: SUCCESS STATE (PRO ACTIVATED ✓ FOR 30 DAYS) */}
           {step === 'success' && confirmedTxRecord && (
             <div className="py-6 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in zoom-in-95">
               <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.35)]">
@@ -492,7 +675,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                 <div className="flex justify-between border-b border-zinc-800/80 pb-1.5">
                   <span className="text-zinc-400">Payment Settled:</span>
                   <span className="text-white font-mono font-bold">
-                    {confirmedTxRecord.cryptoAmount} {confirmedTxRecord.cryptoAsset} ($10.00 USD)
+                    {formatCryptoAmount(confirmedTxRecord.cryptoAmount, confirmedTxRecord.cryptoAsset)} {confirmedTxRecord.cryptoAsset} ($10.00 USD)
                   </span>
                 </div>
                 <div className="flex justify-between border-b border-zinc-800/80 pb-1.5">

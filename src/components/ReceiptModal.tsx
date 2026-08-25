@@ -20,6 +20,7 @@ import {
   Sparkles,
   Palette,
   Award,
+  Lock,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
@@ -154,8 +155,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   if (!isOpen || !transaction) return null;
 
-  const currentTheme = THEME_CONFIGS[selectedTheme] || THEME_CONFIGS.gold;
-  const isPaper = selectedTheme === 'paper';
+  // Theme background customization is exclusive to Pro mode; Free mode uses default classic styling
+  const effectiveThemeKey: ReceiptTheme = isPro ? selectedTheme : 'gold';
+  const currentTheme = THEME_CONFIGS[effectiveThemeKey] || THEME_CONFIGS.gold;
+  const isPaper = effectiveThemeKey === 'paper';
   const fiatConfig = SUPPORTED_FIAT[transaction.fiatCurrency];
   const formattedFiat = `${fiatConfig.symbol}${transaction.amountFiat.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -421,16 +424,18 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Pro Theme Customizer Switcher */}
-            <button
-              type="button"
-              onClick={() => setShowThemePicker(!showThemePicker)}
-              className="p-1.5 px-2.5 bg-zinc-800/80 hover:bg-zinc-700 text-xs font-bold text-amber-300 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
-              title="Change receipt theme"
-            >
-              <Palette className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Theme</span>
-            </button>
+            {/* Pro Theme Customizer Switcher - only visible & active in Pro mode */}
+            {isPro && (
+              <button
+                type="button"
+                onClick={() => setShowThemePicker(!showThemePicker)}
+                className="p-1.5 px-2.5 bg-zinc-800/80 hover:bg-zinc-700 text-xs font-bold text-amber-300 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
+                title="Change receipt theme"
+              >
+                <Palette className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">Theme</span>
+              </button>
+            )}
             <button
               onClick={onClose}
               className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors cursor-pointer"
@@ -440,8 +445,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           </div>
         </div>
 
-        {/* Theme Picker Drawer for Pro / Customization */}
-        {showThemePicker && (
+        {/* Theme Picker Drawer for Pro Customization */}
+        {isPro && showThemePicker && (
           <div className="p-3 bg-[#161824] border border-amber-500/30 rounded-2xl my-2 space-y-2 animate-in slide-in-from-top-2">
             <div className="flex items-center justify-between text-xs text-amber-300 font-bold">
               <span className="flex items-center gap-1">
@@ -498,7 +503,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className={`text-xs font-medium mt-0.5 ${isPaper ? 'text-zinc-700' : 'text-zinc-400'}`}>
                 {merchantName} • {merchantLocation}
               </div>
-              {customReceiptNote && (
+              {isPro && customReceiptNote && (
                 <div className={`text-[11px] font-semibold italic mt-1 ${currentTheme.accentText}`}>
                   "{customReceiptNote}"
                 </div>

@@ -25,6 +25,7 @@ import {
   Award,
   Download,
   Smartphone,
+  Lock,
 } from 'lucide-react';
 import { isStandalone } from '../services/pwaService';
 
@@ -242,62 +243,117 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       )}
 
-      {/* 3. RECEIPT CUSTOMIZATION & BRANDING (PRO / STANDARD) */}
+      {/* 3. RECEIPT & BACKGROUND CUSTOMIZATION (PRO EXCLUSIVE) */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center justify-between">
           <span className="flex items-center gap-1.5">
             <Palette className="w-3.5 h-3.5 text-amber-400" />
-            <span>Receipt Customization</span>
+            <span>Receipt & Background Customization</span>
           </span>
-          {isPro && (
+          {isPro ? (
             <span className="text-[10px] text-amber-300 font-bold uppercase flex items-center gap-1">
               <Award className="w-3 h-3 text-amber-400" />
-              <span>Pro Unlocked</span>
+              <span>Pro Unlocked ✓</span>
+            </span>
+          ) : (
+            <span className="text-[10px] text-amber-400 font-bold uppercase flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+              <Lock className="w-3 h-3 text-amber-400" />
+              <span>Pro Only</span>
             </span>
           )}
         </h2>
-        <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-4">
-          {/* Theme Selector */}
-          <div>
-            <label className="block text-xs text-zinc-300 font-semibold mb-2">
-              Default Receipt Background Theme
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {RECEIPT_THEMES.map((theme) => {
-                const isSelected = (settings.receiptTheme || 'gold') === theme.id;
-                return (
-                  <button
-                    key={theme.id}
-                    type="button"
-                    onClick={() => onUpdateSettings({ receiptTheme: theme.id })}
-                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                      isSelected
-                        ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400/50 text-white font-bold'
-                        : 'bg-[#0d0e14] border-zinc-800 text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <div className={`h-2 rounded-full mb-1.5 bg-gradient-to-r ${theme.previewColor}`} />
-                    <span className="text-xs">{theme.name}</span>
-                  </button>
-                );
-              })}
+
+        {isPro ? (
+          <div className="bg-[#14161f] border border-amber-500/40 rounded-2xl p-4 sm:p-5 space-y-4 shadow-sm">
+            {/* Theme Selector */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-zinc-200 font-bold flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Receipt Background Theme</span>
+                </label>
+                <span className="text-[10px] text-amber-300 font-mono font-semibold">6 Themes Available</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {RECEIPT_THEMES.map((theme) => {
+                  const isSelected = (settings.receiptTheme || 'gold') === theme.id;
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      onClick={() => onUpdateSettings({ receiptTheme: theme.id })}
+                      className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400/50 text-white font-bold shadow-sm'
+                          : 'bg-[#0d0e14] border-zinc-800 text-zinc-400 hover:text-white hover:border-zinc-700'
+                      }`}
+                    >
+                      <div className={`h-2 rounded-full mb-1.5 bg-gradient-to-r ${theme.previewColor}`} />
+                      <span className="text-xs">{theme.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Custom Receipt Note / Footer Message */}
+            <div className="pt-2 border-t border-zinc-800/60">
+              <label className="block text-xs text-zinc-300 font-semibold mb-1">
+                Custom Receipt Note (Printed on Receipts)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Thank you for your business! Follow @store"
+                value={settings.customReceiptNote || ''}
+                onChange={(e) => onUpdateSettings({ customReceiptNote: e.target.value })}
+                className="w-full bg-[#0d0e14] border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+              />
             </div>
           </div>
+        ) : (
+          /* Locked State in Free Mode */
+          <div className="bg-[#12141d] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 relative overflow-hidden space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>Custom Themes & Receipt Branding</span>
+                  <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 text-[10px] font-black rounded-full uppercase">
+                    PRO
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-400 leading-relaxed">
+                  Receipt background themes (Luxury Gold, Cyber Neon, Emerald Minimal, Verse Royal, Obsidian) and custom footer messages are available exclusively in <strong className="text-amber-300 font-bold">Pro Mode</strong>.
+                </p>
+              </div>
+            </div>
 
-          {/* Custom Receipt Note / Footer Message */}
-          <div className="pt-2 border-t border-zinc-800/60">
-            <label className="block text-xs text-zinc-300 font-semibold mb-1">
-              Custom Receipt Note (Printed on Receipts)
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. Thank you for your business! Follow @store"
-              value={settings.customReceiptNote || ''}
-              onChange={(e) => onUpdateSettings({ customReceiptNote: e.target.value })}
-              className="w-full bg-[#0d0e14] border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
-            />
+            {/* Preview blurred badges */}
+            <div className="grid grid-cols-3 gap-2 opacity-40 pointer-events-none py-1">
+              {RECEIPT_THEMES.slice(0, 3).map((theme) => (
+                <div key={theme.id} className="p-2 rounded-lg bg-[#0d0e14] border border-zinc-800 text-[11px] text-zinc-400">
+                  <div className={`h-1.5 rounded-full mb-1 bg-gradient-to-r ${theme.previewColor}`} />
+                  <span className="truncate block">{theme.name}</span>
+                </div>
+              ))}
+            </div>
+
+            {onOpenSubscription && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={onOpenSubscription}
+                  className="w-full py-2.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Unlock Customization with Pro ($10)</span>
+                </button>
+              </div>
+            )}
           </div>
-        </div>
+        )}
       </div>
 
       {/* 4. TRANSACTIONS & EXPORT */}

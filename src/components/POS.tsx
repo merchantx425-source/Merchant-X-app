@@ -8,7 +8,6 @@ import { AssetSelector } from './AssetSelector';
 import { NumericKeypad } from './NumericKeypad';
 import { openWalletModal } from '../config/appkit';
 import {
-  Settings as SettingsIcon,
   Wallet,
   CheckCircle2,
   AlertCircle,
@@ -29,7 +28,7 @@ interface POSProps {
   onCharge: () => void;
   walletState: WalletState;
   onOpenWalletModal: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings?: () => void;
   settings: AppSettings;
   onRefreshRates?: () => void;
   ratesError?: string | null;
@@ -145,48 +144,39 @@ export const POS: React.FC<POSProps> = ({
   return (
     <div className="w-full max-w-md mx-auto flex flex-col justify-between px-3 sm:px-4 pt-1 pb-28 sm:pb-32 select-none min-h-[calc(100dvh-4.5rem)]">
       {/* 1. Terminal Top Bar */}
-      <header className="flex items-center justify-between py-1.5 border-b border-purple-900/20 shrink-0">
-        {/* Brand */}
-        <div className="flex items-center gap-2">
+      <header className="flex items-center justify-between py-1.5 border-b border-purple-900/20 shrink-0 gap-2">
+        {/* Brand: Logo & Merchant X Title */}
+        <div className="flex items-center gap-2 shrink-0">
           <MerchantXLogo size="xs" />
-          <span className="font-extrabold text-base sm:text-lg font-display tracking-tight text-white">
+          <span className="font-extrabold text-base sm:text-lg font-display tracking-tight text-white whitespace-nowrap">
             Merchant <span className="text-amber-400">X</span>
           </span>
         </div>
 
-        {/* Right Action Icons: Wallet Status & Settings */}
-        <div className="flex items-center gap-1.5">
+        {/* Right Action: Wallet Status & Connect Button */}
+        <div className="flex items-center gap-1.5 min-w-0">
           <button
             type="button"
             onClick={walletState.isConnected ? onOpenWalletModal : handleConnectWalletClick}
             disabled={isOpeningWallet}
-            className={`flex items-center gap-1.5 py-1 px-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 py-1.5 px-2.5 sm:px-3 rounded-xl border text-xs font-semibold transition-all cursor-pointer truncate ${
               walletState.isConnected
                 ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300 hover:bg-emerald-900/50'
                 : 'bg-[#181a24] border-zinc-700/80 text-zinc-300 hover:text-white hover:border-amber-500/50'
             }`}
           >
             {walletState.isConnected ? (
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
-              <Wallet className="w-3.5 h-3.5 text-amber-400" />
+              <Wallet className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             )}
-            <span className="font-mono text-[10px] sm:text-[11px]">
+            <span className="font-mono text-[10px] sm:text-[11px] truncate whitespace-nowrap">
               {walletState.isConnected
                 ? `Connected ✓ ${connectedDisplayAddress || ''}`
                 : isOpeningWallet
                 ? 'Opening...'
                 : getTranslation(lang, 'connectWallet')}
             </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 rounded-xl transition-colors cursor-pointer"
-            title="Terminal Settings"
-          >
-            <SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       </header>
