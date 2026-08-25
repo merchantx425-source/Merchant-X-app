@@ -3,9 +3,6 @@ import { MerchantXLogo } from './MerchantXLogo';
 import {
   isStandalone,
   isIOS,
-  isMobileDevice,
-  isInstallDismissed,
-  setInstallDismissed,
   subscribeInstallState,
   triggerNativeInstall,
   canPromptNativeInstall,
@@ -28,7 +25,6 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
   const [installSuccess, setInstallSuccess] = useState(false);
 
   useEffect(() => {
-    // If running already in standalone mode, never auto-open
     const standalone = isStandalone();
     setIsInstalled(standalone);
 
@@ -44,38 +40,30 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
       return;
     }
 
-    // Auto-prompt logic for mobile browsers
-    const dismissed = isInstallDismissed();
-    const isMobile = isMobileDevice();
-    const isApple = isIOS();
+    // Always popup on reload if not running in standalone PWA mode
+    const timer = setTimeout(() => {
+      if (!isStandalone()) {
+        setIsOpen(true);
+      }
+    }, 600);
 
-    // Check if dismissed
-    if (!dismissed && (isMobile || canPromptNativeInstall() || isApple)) {
-      // Small 1.5s delay after initial load so UI settles smoothly
-      const timer = setTimeout(() => {
-        if (!isStandalone() && !isInstallDismissed()) {
-          setIsOpen(true);
-        }
-      }, 1500);
-
-      return () => clearTimeout(timer);
-    }
-
-    // Subscribe to native beforeinstallprompt availability
+    // Also listen for native prompt readiness
     const unsubscribe = subscribeInstallState((canInstall) => {
-      if (canInstall && !isInstallDismissed() && !isStandalone()) {
+      if (canInstall && !isStandalone()) {
         setIsOpen(true);
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timer);
+      unsubscribe();
+    };
   }, [forceOpen]);
 
-  // Handle Cancel / Dismiss
+  // Handle Cancel / Dismiss for this session
   const handleCancel = () => {
     setIsOpen(false);
     setShowIOSInstructions(false);
-    setInstallDismissed(true);
     if (onClose) onClose();
   };
 
@@ -84,7 +72,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
     const isApple = isIOS();
 
     if (isApple && !canPromptNativeInstall()) {
-      // iOS Safari manual flow
+      // iOS Safari step-by-step flow
       setShowIOSInstructions(true);
       return;
     }
@@ -94,17 +82,15 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
       const outcome = await triggerNativeInstall();
       if (outcome === 'accepted') {
         setInstallSuccess(true);
-        setInstallDismissed(true);
         setTimeout(() => {
           setIsOpen(false);
           if (onClose) onClose();
         }, 2000);
       } else if (outcome === 'dismissed') {
-        setInstallDismissed(true);
         setIsOpen(false);
         if (onClose) onClose();
       } else {
-        // Fallback for browsers without native prompt
+        // If native prompt is not available on this browser, show instruction overlay
         setShowIOSInstructions(true);
       }
     } catch {
@@ -166,7 +152,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
             </p>
           </div>
         ) : showIOSInstructions ? (
-          /* iOS Safari / Manual Step-by-Step Instructions */
+          /* iOS Safari / Step-by-Step Instructions */
           <div className="space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-11 h-11 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center shrink-0">
@@ -176,7 +162,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
                 <h3 className="text-base font-bold font-display text-white">
                   Add Merchant X to Home Screen
                 </h3>
-                <p className="text-xs text-zinc-400">Install via Safari in 2 simple steps:</p>
+                <p className="text-xs text-zinc-400">Install via Safari or your browser menu:</p>
               </div>
             </div>
 
@@ -186,8 +172,8 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
                   1
                 </div>
                 <div className="text-zinc-300">
-                  Tap the <strong className="text-white font-semibold">Share</strong> button{' '}
-                  <Share className="w-3.5 h-3.5 inline text-amber-400 mx-1 align-sub" /> in Safari's bottom toolbar.
+                  Tap the <strong className="text-white font-semibold">Share</strong> or browser menu button{' '}
+                  <Share className="w-3.5 h-3.5 inline text-amber-400 mx-1 align-sub" /> in your toolbar.
                 </div>
               </div>
 
@@ -196,9 +182,9 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
                   2
                 </div>
                 <div className="text-zinc-300">
-                  Scroll down and tap{' '}
+                  Tap{' '}
                   <span className="inline-flex items-center gap-1 font-semibold text-white bg-zinc-800 px-1.5 py-0.5 rounded border border-zinc-700">
-                    <PlusSquare className="w-3.5 h-3.5 text-amber-400" /> Add to Home Screen
+                    <PlusSquare className="w-3.5 h-3.5 text-amber-400" /> Add to Home Screen / Install App
                   </span>
                 </div>
               </div>
@@ -215,7 +201,7 @@ export const PWAInstallPrompt: React.FC<PWAInstallPromptProps> = ({
             </div>
           </div>
         ) : (
-          /* Standard Install Prompt (Title, Subtitle, Install, Cancel) */
+          /* Standard Install Prompt */
           <div className="space-y-4">
             {/* Header with App Badge */}
             <div className="flex items-start gap-3.5">

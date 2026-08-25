@@ -11,8 +11,6 @@ export interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>;
 }
 
-const STORAGE_KEY_DISMISSED = 'merchantx_pwa_dismissed';
-
 let deferredPrompt: BeforeInstallPromptEvent | null = null;
 const installListeners = new Set<(canInstall: boolean) => void>();
 
@@ -26,13 +24,8 @@ export function registerServiceWorker() {
     window.addEventListener('load', () => {
       navigator.serviceWorker
         .register('/sw.js')
-        .then((reg) => {
-          // Log registration
-          if (reg.installing) {
-            // Service worker installing
-          } else if (reg.active) {
-            // Service worker active
-          }
+        .then(() => {
+          // Service worker active
         })
         .catch((err) => {
           console.warn('[PWA] Service worker registration failed:', err);
@@ -52,11 +45,6 @@ export function registerServiceWorker() {
   window.addEventListener('appinstalled', () => {
     deferredPrompt = null;
     installListeners.forEach((cb) => cb(false));
-    try {
-      localStorage.setItem(STORAGE_KEY_DISMISSED, 'installed');
-    } catch {
-      // Ignore storage errors
-    }
   });
 }
 
@@ -92,35 +80,6 @@ export function isMobileDevice(): boolean {
   const isSmallScreen = window.innerWidth <= 840;
   const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
   return isMobileUA || (isSmallScreen && hasTouch);
-}
-
-/**
- * Check if user previously dismissed the install prompt
- */
-export function isInstallDismissed(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const val = localStorage.getItem(STORAGE_KEY_DISMISSED);
-    return val === 'true' || val === 'installed';
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Set user dismissal state
- */
-export function setInstallDismissed(dismissed: boolean) {
-  if (typeof window === 'undefined') return;
-  try {
-    if (dismissed) {
-      localStorage.setItem(STORAGE_KEY_DISMISSED, 'true');
-    } else {
-      localStorage.removeItem(STORAGE_KEY_DISMISSED);
-    }
-  } catch {
-    // Ignore storage errors
-  }
 }
 
 /**
@@ -162,3 +121,4 @@ export async function triggerNativeInstall(): Promise<'accepted' | 'dismissed' |
     return 'unavailable';
   }
 }
+
