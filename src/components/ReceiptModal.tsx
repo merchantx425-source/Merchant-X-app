@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { TransactionRecord, CryptoAsset } from '../types/merchant';
+import React, { useState } from 'react';
+import { TransactionRecord, CryptoAsset, ReceiptTheme } from '../types/merchant';
 import { SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
 import { getTranslation } from '../config/i18n';
@@ -17,8 +17,9 @@ import {
   Loader2,
   Copy,
   CheckCheck,
-  QrCode,
   Sparkles,
+  Palette,
+  Award,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import jsPDF from 'jspdf';
@@ -31,58 +32,104 @@ interface ReceiptModalProps {
   merchantLocation?: string;
   language?: string;
   onNewPayment?: () => void;
+  isPro?: boolean;
+  activeReceiptTheme?: ReceiptTheme;
+  onSelectReceiptTheme?: (theme: ReceiptTheme) => void;
+  customReceiptNote?: string;
 }
 
-const ASSET_THEMES: Record<
-  CryptoAsset,
-  {
-    gradient: string;
-    border: string;
-    badgeBg: string;
-    badgeText: string;
-    accent: string;
-    tagline: string;
-  }
-> = {
-  VERSE: {
-    gradient: 'from-[#00d2ff] via-[#8a2be2] to-[#ff007a]',
-    border: 'border-purple-500/40',
-    badgeBg: 'bg-purple-950/80 border-purple-400/40',
-    badgeText: 'text-cyan-300',
-    accent: '#00d2ff',
-    tagline: 'Bitcoin.com Verse Ecosystem Settlement',
-  },
-  BTC: {
-    gradient: 'from-[#F7931A] via-[#E88000] to-[#FFAB40]',
+interface ThemeConfig {
+  id: ReceiptTheme;
+  name: string;
+  ribbon: string;
+  containerBg: string;
+  cardBg: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+  accentText: string;
+  badgeBg: string;
+  badgeText: string;
+}
+
+const THEME_CONFIGS: Record<ReceiptTheme, ThemeConfig> = {
+  gold: {
+    id: 'gold',
+    name: 'Luxury Gold',
+    ribbon: 'from-amber-400 via-amber-300 to-amber-500',
+    containerBg: 'bg-[#0d0d12]',
+    cardBg: 'bg-gradient-to-b from-[#1c1913] to-[#0f0e13]',
     border: 'border-amber-500/40',
-    badgeBg: 'bg-amber-950/80 border-amber-400/40',
+    textPrimary: 'text-white',
+    textSecondary: 'text-amber-200/70',
+    accentText: 'text-amber-400',
+    badgeBg: 'bg-amber-500/20 border-amber-400/50',
     badgeText: 'text-amber-300',
-    accent: '#F7931A',
-    tagline: 'Bitcoin Blockchain Direct Settlement',
   },
-  USDT: {
-    gradient: 'from-[#26A17B] via-[#00B976] to-[#00E59B]',
+  neon: {
+    id: 'neon',
+    name: 'Cyber Neon',
+    ribbon: 'from-cyan-400 via-fuchsia-500 to-pink-500',
+    containerBg: 'bg-[#0a0d18]',
+    cardBg: 'bg-gradient-to-b from-[#12162e] to-[#080b16]',
+    border: 'border-cyan-500/40',
+    textPrimary: 'text-white',
+    textSecondary: 'text-cyan-200/70',
+    accentText: 'text-cyan-400',
+    badgeBg: 'bg-cyan-500/20 border-cyan-400/50',
+    badgeText: 'text-cyan-300',
+  },
+  emerald: {
+    id: 'emerald',
+    name: 'Emerald Minimal',
+    ribbon: 'from-emerald-400 via-teal-400 to-green-500',
+    containerBg: 'bg-[#07130f]',
+    cardBg: 'bg-gradient-to-b from-[#0e241c] to-[#05110c]',
     border: 'border-emerald-500/40',
-    badgeBg: 'bg-emerald-950/80 border-emerald-400/40',
+    textPrimary: 'text-white',
+    textSecondary: 'text-emerald-200/70',
+    accentText: 'text-emerald-400',
+    badgeBg: 'bg-emerald-500/20 border-emerald-400/50',
     badgeText: 'text-emerald-300',
-    accent: '#26A17B',
-    tagline: 'Tether USD Stablecoin Settlement',
   },
-  ETH: {
-    gradient: 'from-[#627EEA] via-[#4F6BE8] to-[#8C9EFF]',
-    border: 'border-blue-500/40',
-    badgeBg: 'bg-blue-950/80 border-blue-400/40',
-    badgeText: 'text-blue-300',
-    accent: '#627EEA',
-    tagline: 'Ethereum Virtual Machine Direct Settlement',
+  obsidian: {
+    id: 'obsidian',
+    name: 'Obsidian Onyx',
+    ribbon: 'from-zinc-400 via-zinc-200 to-zinc-500',
+    containerBg: 'bg-[#09090b]',
+    cardBg: 'bg-gradient-to-b from-[#18181b] to-[#09090b]',
+    border: 'border-zinc-700/60',
+    textPrimary: 'text-white',
+    textSecondary: 'text-zinc-400',
+    accentText: 'text-zinc-200',
+    badgeBg: 'bg-zinc-800 border-zinc-600',
+    badgeText: 'text-zinc-200',
   },
-  POL: {
-    gradient: 'from-[#8247E5] via-[#7B3FE4] to-[#B388FF]',
-    border: 'border-indigo-500/40',
-    badgeBg: 'bg-indigo-950/80 border-indigo-400/40',
-    badgeText: 'text-indigo-300',
-    accent: '#8247E5',
-    tagline: 'Polygon PoS Ultra-Fast Settlement',
+  paper: {
+    id: 'paper',
+    name: 'Classic POS',
+    ribbon: 'from-amber-600 via-amber-700 to-amber-900',
+    containerBg: 'bg-[#f4f1ea] text-zinc-900',
+    cardBg: 'bg-[#ede8dc]',
+    border: 'border-zinc-400/60',
+    textPrimary: 'text-zinc-950',
+    textSecondary: 'text-zinc-700',
+    accentText: 'text-amber-800',
+    badgeBg: 'bg-zinc-300 border-zinc-400',
+    badgeText: 'text-zinc-900',
+  },
+  verse: {
+    id: 'verse',
+    name: 'Verse Royal',
+    ribbon: 'from-[#00d2ff] via-[#8a2be2] to-[#ff007a]',
+    containerBg: 'bg-[#0d091a]',
+    cardBg: 'bg-gradient-to-b from-[#20153d] to-[#0b0717]',
+    border: 'border-purple-500/50',
+    textPrimary: 'text-white',
+    textSecondary: 'text-purple-200/70',
+    accentText: 'text-[#00d2ff]',
+    badgeBg: 'bg-purple-500/25 border-purple-400/50',
+    badgeText: 'text-purple-200',
   },
 };
 
@@ -94,14 +141,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
   merchantLocation = 'Terminal 01',
   language = 'en',
   onNewPayment,
+  isPro = false,
+  activeReceiptTheme = 'gold',
+  onSelectReceiptTheme,
+  customReceiptNote,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [selectedTheme, setSelectedTheme] = useState<ReceiptTheme>(activeReceiptTheme);
+  const [showThemePicker, setShowThemePicker] = useState(false);
 
   if (!isOpen || !transaction) return null;
 
-  const theme = ASSET_THEMES[transaction.cryptoAsset] || ASSET_THEMES.BTC;
+  const currentTheme = THEME_CONFIGS[selectedTheme] || THEME_CONFIGS.gold;
+  const isPaper = selectedTheme === 'paper';
   const fiatConfig = SUPPORTED_FIAT[transaction.fiatCurrency];
   const formattedFiat = `${fiatConfig.symbol}${transaction.amountFiat.toLocaleString('en-US', {
     minimumFractionDigits: 2,
@@ -148,7 +202,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       doc.rect(0, 0, pageWidth, 44, 'F');
 
       // Accent Ribbon Bar
-      doc.setFillColor(245, 158, 11); // Amber accent
+      doc.setFillColor(245, 158, 11);
       doc.rect(0, 44, pageWidth, 2.5, 'F');
 
       // Brand Title
@@ -294,7 +348,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
       doc.setFontSize(7.2);
       doc.setTextColor(148, 163, 184);
       const disclaimer =
-        'This receipt certifies a finalized non-custodial cryptocurrency transaction broadcasted directly to the public blockchain network. Merchant X does not intermediate, hold, or custody merchant funds; 100% of all payments settle directly to the merchant receiving wallet. Retain this digital receipt for accounting and audit records.';
+        'This receipt certifies a finalized non-custodial cryptocurrency transaction broadcasted directly to the public blockchain network. Merchant X does not intermediate, hold, or custody merchant funds; 100% of all payments settle directly to the merchant receiving wallet.';
       const splitDisclaimer = doc.splitTextToSize(disclaimer, contentWidth);
       doc.text(splitDisclaimer, margin, y);
 
@@ -332,6 +386,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
     }
   };
 
+  const handleSelectTheme = (themeKey: ReceiptTheme) => {
+    setSelectedTheme(themeKey);
+    if (onSelectReceiptTheme) {
+      onSelectReceiptTheme(themeKey);
+    }
+  };
+
   const handleNewPaymentClick = () => {
     if (onNewPayment) {
       onNewPayment();
@@ -341,118 +402,175 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-[#11131a] border border-purple-900/30 rounded-3xl p-4 sm:p-6 shadow-2xl text-white overflow-hidden max-h-[96vh] overflow-y-auto">
+      <div className="relative w-full max-w-lg bg-[#10121a] border border-zinc-800 rounded-3xl p-4 sm:p-6 shadow-2xl text-white overflow-hidden max-h-[96vh] overflow-y-auto">
         {/* Top Header Controls */}
         <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80 no-print">
           <div className="flex items-center gap-2">
             <span className="text-xs uppercase font-extrabold tracking-wider text-zinc-300">
               {getTranslation(language, 'officialReceipt')}
             </span>
-            <span className="px-2.5 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-extrabold text-emerald-400 flex items-center gap-1">
+            <span className="px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-500/40 text-[10px] font-extrabold text-emerald-400 flex items-center gap-1">
               <Check className="w-3 h-3 text-emerald-400" />
               <span>PAID & VERIFIED</span>
             </span>
+            {isPro && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/40 text-[10px] font-black text-amber-300 flex items-center gap-1">
+                <Award className="w-3 h-3 text-amber-400" />
+                <span>0% FEE PRO</span>
+              </span>
+            )}
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {/* Pro Theme Customizer Switcher */}
+            <button
+              type="button"
+              onClick={() => setShowThemePicker(!showThemePicker)}
+              className="p-1.5 px-2.5 bg-zinc-800/80 hover:bg-zinc-700 text-xs font-bold text-amber-300 rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer border border-zinc-700"
+              title="Change receipt theme"
+            >
+              <Palette className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Theme</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 text-zinc-400 hover:text-white rounded-full hover:bg-zinc-800 transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Realistic High-Fidelity POS Digital Receipt */}
+        {/* Theme Picker Drawer for Pro / Customization */}
+        {showThemePicker && (
+          <div className="p-3 bg-[#161824] border border-amber-500/30 rounded-2xl my-2 space-y-2 animate-in slide-in-from-top-2">
+            <div className="flex items-center justify-between text-xs text-amber-300 font-bold">
+              <span className="flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Select Receipt Background Theme</span>
+              </span>
+              <span className="text-[10px] text-zinc-400 font-normal">6 styles available</span>
+            </div>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+              {(Object.keys(THEME_CONFIGS) as ReceiptTheme[]).map((themeKey) => {
+                const conf = THEME_CONFIGS[themeKey];
+                const isSelected = selectedTheme === themeKey;
+                return (
+                  <button
+                    key={themeKey}
+                    type="button"
+                    onClick={() => handleSelectTheme(themeKey)}
+                    className={`p-2 rounded-xl border text-center transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-500/20 border-amber-400 text-amber-300 font-bold shadow-sm ring-1 ring-amber-400/50'
+                        : 'bg-[#10121b] border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <div className={`h-2.5 rounded-full mb-1 bg-gradient-to-r ${conf.ribbon}`} />
+                    <div className="text-[10px] truncate">{conf.name}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Dynamic Stylized POS Digital Receipt */}
         <div
           id="printable-receipt"
-          className="my-4 bg-[#090b10] border border-zinc-800 rounded-2xl relative shadow-2xl text-white overflow-hidden"
+          className={`my-4 ${currentTheme.containerBg} ${currentTheme.border} border rounded-2xl relative shadow-2xl overflow-hidden transition-all duration-300`}
         >
           {/* Top Decorative Ribbon */}
-          <div className={`h-2.5 w-full bg-gradient-to-r ${theme.gradient}`} />
+          <div className={`h-2.5 w-full bg-gradient-to-r ${currentTheme.ribbon}`} />
 
           <div className="p-5 sm:p-6 space-y-4">
             {/* Store & Branding Header */}
-            <div className="flex flex-col items-center text-center pb-3 border-b border-dashed border-zinc-800">
+            <div className={`flex flex-col items-center text-center pb-3 border-b border-dashed ${isPaper ? 'border-zinc-400' : 'border-zinc-800'}`}>
               <div className="flex items-center gap-2">
                 <MerchantXLogo size="md" />
                 <CryptoAssetIcon asset={transaction.cryptoAsset} size="md" />
               </div>
-              <h1 className="text-2xl font-black font-display tracking-tight mt-1 text-white">
-                MERCHANT <span className="text-amber-400">X</span>
+              <h1 className={`text-2xl font-black font-display tracking-tight mt-1 ${isPaper ? 'text-zinc-950' : 'text-white'}`}>
+                MERCHANT <span className={currentTheme.accentText}>X</span>
               </h1>
-              <div className="text-[11px] font-bold text-zinc-300 uppercase tracking-widest mt-0.5">
+              <div className={`text-[11px] font-bold uppercase tracking-widest mt-0.5 ${currentTheme.textSecondary}`}>
                 Official Crypto Tax Receipt
               </div>
-              <div className="text-xs text-zinc-400 font-medium mt-0.5">
+              <div className={`text-xs font-medium mt-0.5 ${isPaper ? 'text-zinc-700' : 'text-zinc-400'}`}>
                 {merchantName} • {merchantLocation}
               </div>
+              {customReceiptNote && (
+                <div className={`text-[11px] font-semibold italic mt-1 ${currentTheme.accentText}`}>
+                  "{customReceiptNote}"
+                </div>
+              )}
             </div>
 
             {/* Paid Stamp & Amount Card */}
-            <div className="relative py-4 px-3 rounded-2xl bg-gradient-to-b from-[#151926] to-[#0c0e18] border border-zinc-800 text-center space-y-2 overflow-hidden shadow-inner">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-950/80 border border-emerald-500/50 text-emerald-400 text-xs font-black tracking-wider uppercase">
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
+            <div className={`relative py-4 px-3 rounded-2xl ${currentTheme.cardBg} ${currentTheme.border} border text-center space-y-2 overflow-hidden shadow-inner`}>
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${currentTheme.badgeBg} ${currentTheme.badgeText} text-xs font-black tracking-wider uppercase border`}>
+                <Check className="w-3.5 h-3.5" />
                 <span>PAYMENT COMPLETED & SETTLED</span>
               </div>
 
-              <div className="text-3xl sm:text-4xl font-black font-display text-white tracking-tight">
+              <div className={`text-3xl sm:text-4xl font-black font-display tracking-tight ${isPaper ? 'text-zinc-950' : 'text-white'}`}>
                 {formattedFiat}
               </div>
 
-              <div className="inline-block px-3.5 py-1 rounded-full bg-black/60 border border-zinc-700/60 text-xs font-mono font-bold text-amber-300">
+              <div className={`inline-block px-3.5 py-1 rounded-full ${isPaper ? 'bg-zinc-200 border-zinc-400 text-zinc-900' : 'bg-black/60 border-zinc-700/60 text-amber-300'} text-xs font-mono font-bold border`}>
                 {formattedCrypto}
               </div>
 
-              <div className="text-[11px] text-zinc-400 font-medium">
-                {theme.tagline}
+              <div className={`text-[11px] font-medium ${currentTheme.textSecondary}`}>
+                Settled on {transaction.network} Blockchain
               </div>
             </div>
 
             {/* Itemized Audit Trail */}
-            <div className="space-y-2.5 text-xs border-b border-dashed border-zinc-800 pb-4">
+            <div className={`space-y-2.5 text-xs border-b border-dashed ${isPaper ? 'border-zinc-400 text-zinc-800' : 'border-zinc-800 text-zinc-300'} pb-4`}>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Receipt Reference:</span>
-                <span className="font-mono font-bold text-amber-400 text-xs">{transaction.reference}</span>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>Receipt Reference:</span>
+                <span className={`font-mono font-bold text-xs ${currentTheme.accentText}`}>{transaction.reference}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Order ID:</span>
-                <span className="font-mono text-zinc-300 text-[11px]">{transaction.id}</span>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>Order ID:</span>
+                <span className="font-mono text-[11px]">{transaction.id}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">{getTranslation(language, 'paymentAsset')}:</span>
-                <span className="font-bold text-white flex items-center gap-1.5">
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>{getTranslation(language, 'paymentAsset')}:</span>
+                <span className="font-bold flex items-center gap-1.5">
                   <CryptoAssetIcon asset={transaction.cryptoAsset} size="sm" />
                   <span>{transaction.cryptoAsset} ({transaction.network})</span>
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Settlement Rate:</span>
-                <span className="font-mono text-zinc-300">
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>Settlement Rate:</span>
+                <span className="font-mono">
                   {fiatConfig.symbol}{transaction.cryptoRate?.toLocaleString('en-US') || '1'} / 1 {transaction.cryptoAsset}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">{getTranslation(language, 'date')} / {getTranslation(language, 'time')}:</span>
-                <span className="text-zinc-300">{transaction.formattedDate}, {transaction.formattedTime}</span>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>{getTranslation(language, 'date')} / {getTranslation(language, 'time')}:</span>
+                <span>{transaction.formattedDate}, {transaction.formattedTime}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">{getTranslation(language, 'merchantWallet')}:</span>
-                <span className="font-mono text-zinc-300">{formatAddress(transaction.merchantWallet, 6)}</span>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>{getTranslation(language, 'merchantWallet')}:</span>
+                <span className="font-mono">{formatAddress(transaction.merchantWallet, 6)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Customer Payer:</span>
-                <span className="font-mono text-zinc-300">{formatAddress(transaction.customerWallet, 6)}</span>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>Customer Payer:</span>
+                <span className="font-mono">{formatAddress(transaction.customerWallet, 6)}</span>
               </div>
 
               {/* Transaction Hash */}
-              <div className="flex items-center justify-between pt-1 border-t border-zinc-800/80">
-                <span className="text-zinc-400">{getTranslation(language, 'txHash')}:</span>
+              <div className={`flex items-center justify-between pt-1 border-t ${isPaper ? 'border-zinc-300' : 'border-zinc-800/80'}`}>
+                <span className={isPaper ? 'text-zinc-600' : 'text-zinc-400'}>{getTranslation(language, 'txHash')}:</span>
                 {transaction.txHash ? (
                   <div className="flex items-center gap-1.5">
                     <a
                       href={explorerUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1 font-bold"
+                      className={`hover:underline font-mono text-[11px] flex items-center gap-1 font-bold ${currentTheme.accentText}`}
                     >
                       <span>{formatAddress(transaction.txHash, 6)}</span>
                       <ExternalLink className="w-3 h-3" />
@@ -473,14 +591,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
             </div>
 
             {/* Blockchain Verification QR Code & Non-Custodial Guarantee */}
-            <div className="flex items-center justify-between gap-3 p-3 bg-[#13151f] rounded-xl border border-zinc-800">
+            <div className={`flex items-center justify-between gap-3 p-3 ${isPaper ? 'bg-white border-zinc-300' : 'bg-black/40 border-zinc-800'} rounded-xl border`}>
               <div className="space-y-1">
                 <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>100% Non-Custodial Direct Settlement</span>
+                  <span>100% Non-Custodial Settlement</span>
                 </div>
-                <p className="text-[10px] text-zinc-400 leading-tight">
-                  Scan QR with your phone to audit and verify this live transaction on {transaction.network} Block Explorer.
+                <p className={`text-[10px] leading-tight ${isPaper ? 'text-zinc-600' : 'text-zinc-400'}`}>
+                  Scan QR with phone camera to inspect confirmed ledger blocks on {transaction.network} explorer.
                 </p>
               </div>
 
@@ -491,13 +609,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
             {/* Barcode & Security Watermark */}
             <div className="text-center pt-2 space-y-1.5">
-              {/* Simulated Barcode */}
               <div className="h-6 w-4/5 mx-auto bg-gradient-to-r from-zinc-700 via-zinc-500 to-zinc-700 opacity-60 rounded flex items-center justify-center">
                 <span className="font-mono text-[9px] text-zinc-300 tracking-[0.3em]">
                   ||||| | |||| || ||||| |||| | |||
                 </span>
               </div>
-              <div className="text-[10px] font-mono text-zinc-500">
+              <div className={`text-[10px] font-mono ${isPaper ? 'text-zinc-600' : 'text-zinc-500'}`}>
                 AUTH NO: {transaction.reference} • THANK YOU FOR YOUR PAYMENT
               </div>
             </div>
@@ -509,7 +626,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <button
             type="button"
             onClick={handlePrint}
-            className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow"
+            className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#161824] hover:bg-[#202334] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow"
           >
             <Printer className="w-4 h-4 text-amber-400" />
             <span>PRINT</span>
@@ -530,7 +647,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
           <button
             type="button"
             onClick={handleShare}
-            className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#1a1c24] hover:bg-[#232733] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow"
+            className="flex items-center justify-center gap-1.5 py-3 px-2 bg-[#161824] hover:bg-[#202334] border border-zinc-700/80 rounded-xl text-xs font-bold text-white transition-all cursor-pointer shadow"
           >
             <Share2 className="w-4 h-4 text-amber-400" />
             <span>{copiedLink ? 'Copied!' : 'SHARE'}</span>

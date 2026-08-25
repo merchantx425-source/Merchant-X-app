@@ -116,6 +116,7 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
     BTC: 64500.0,
     ETH: 3150.0,
     USDT: 1.0,
+    USDC: 1.0,
     POL: 0.42,
     VERSE: 0.000018, // Verified current rate: $0.000018 USD
   };
@@ -287,6 +288,7 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
           BTC: btcUsd,
           ETH: ethUsd,
           USDT: usdtUsd,
+          USDC: 1.0,
           POL: polUsd,
           VERSE: verseUsd,
         },
@@ -301,6 +303,7 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
     BTC: ratesCache?.rates?.BTC || defaultUsdRates.BTC,
     ETH: ratesCache?.rates?.ETH || defaultUsdRates.ETH,
     USDT: ratesCache?.rates?.USDT || defaultUsdRates.USDT,
+    USDC: ratesCache?.rates?.USDC || defaultUsdRates.USDC,
     POL: ratesCache?.rates?.POL || defaultUsdRates.POL,
     VERSE: ratesCache?.rates?.VERSE || defaultUsdRates.VERSE,
   };
@@ -311,6 +314,7 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
     BTC: usdPrices.BTC * fiatPerUsd,
     ETH: usdPrices.ETH * fiatPerUsd,
     USDT: usdPrices.USDT * fiatPerUsd,
+    USDC: usdPrices.USDC * fiatPerUsd,
     POL: usdPrices.POL * fiatPerUsd,
     VERSE: usdPrices.VERSE * fiatPerUsd,
   };
@@ -535,6 +539,20 @@ export async function fetchRealAssetBalance(
       if (raw === 0) {
         const ethUsdt = await fetchErc20('0xdAC17F958D2ee523a2206206994597C13D831ec7', 6, 'ETHEREUM');
         if (ethUsdt > 0) raw = ethUsdt;
+      }
+      return {
+        balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        balanceRaw: raw,
+        error: null,
+      };
+    }
+
+    // E. USDC (Native ERC-20 on Polygon: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 and bridged 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
+    if (asset === 'USDC') {
+      let raw = await fetchErc20(config.contractAddress || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', 6, 'POLYGON');
+      if (raw === 0) {
+        const bridgedUsdc = await fetchErc20('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', 6, 'POLYGON');
+        if (bridgedUsdc > 0) raw = bridgedUsdc;
       }
       return {
         balance: raw === 0 ? '0' : raw.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }),

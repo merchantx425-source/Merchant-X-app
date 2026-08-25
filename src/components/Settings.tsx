@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState } from '../types/merchant';
+import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme } from '../types/merchant';
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
 import { isBiometricAvailable, registerBiometricPasskey } from '../services/biometricService';
@@ -21,7 +21,12 @@ import {
   ChevronRight,
   AlertCircle,
   Sparkles,
+  Palette,
+  Award,
+  Download,
+  Smartphone,
 } from 'lucide-react';
+import { isStandalone } from '../services/pwaService';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -34,7 +39,17 @@ interface SettingsProps {
   onOpenSubscription?: () => void;
   subscriptionState?: SubscriptionState;
   isPro?: boolean;
+  onOpenInstallPrompt?: () => void;
 }
+
+const RECEIPT_THEMES: { id: ReceiptTheme; name: string; previewColor: string }[] = [
+  { id: 'gold', name: 'Luxury Gold', previewColor: 'from-amber-400 to-amber-600' },
+  { id: 'neon', name: 'Cyber Neon', previewColor: 'from-cyan-400 to-fuchsia-500' },
+  { id: 'emerald', name: 'Emerald Minimal', previewColor: 'from-emerald-400 to-teal-500' },
+  { id: 'obsidian', name: 'Obsidian Onyx', previewColor: 'from-zinc-400 to-zinc-700' },
+  { id: 'paper', name: 'Classic POS Paper', previewColor: 'from-amber-700 to-zinc-600' },
+  { id: 'verse', name: 'Verse Royal Violet', previewColor: 'from-[#00d2ff] via-[#8a2be2] to-[#ff007a]' },
+];
 
 export const Settings: React.FC<SettingsProps> = ({
   settings,
@@ -47,17 +62,20 @@ export const Settings: React.FC<SettingsProps> = ({
   onOpenSubscription,
   subscriptionState,
   isPro = false,
+  onOpenInstallPrompt,
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
   const [biometricSupported, setBiometricSupported] = useState<boolean | null>(null);
   const [biometricError, setBiometricError] = useState<string | null>(null);
+  const [appInstalled, setAppInstalled] = useState(false);
 
   const lang = settings.language;
 
   useEffect(() => {
     isBiometricAvailable().then((res) => setBiometricSupported(res));
+    setAppInstalled(isStandalone());
   }, []);
 
   // Biometric toggle handler
@@ -79,7 +97,7 @@ export const Settings: React.FC<SettingsProps> = ({
   const handleShareApp = async () => {
     const shareData = {
       title: 'Merchant X — Crypto Payment POS',
-      text: 'Accept VERSE, POL, USDT, ETH, and BTC crypto payments with Merchant X terminal.',
+      text: 'Accept VERSE, POL, USDC, USDT, ETH, and BTC crypto payments with Merchant X terminal.',
       url: window.location.href,
     };
 
@@ -105,7 +123,7 @@ export const Settings: React.FC<SettingsProps> = ({
         <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
           {getTranslation(lang, 'settings')}
         </h1>
-        <p className="text-xs text-zinc-400">Terminal preferences, security, and wallet routing</p>
+        <p className="text-xs text-zinc-400">Terminal preferences, security, and receipt branding</p>
       </div>
 
       {/* 1. WALLET / ACCOUNT */}
@@ -224,10 +242,68 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       )}
 
-      {/* 3. TRANSACTIONS */}
+      {/* 3. RECEIPT CUSTOMIZATION & BRANDING (PRO / STANDARD) */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center justify-between">
+          <span className="flex items-center gap-1.5">
+            <Palette className="w-3.5 h-3.5 text-amber-400" />
+            <span>Receipt Customization</span>
+          </span>
+          {isPro && (
+            <span className="text-[10px] text-amber-300 font-bold uppercase flex items-center gap-1">
+              <Award className="w-3 h-3 text-amber-400" />
+              <span>Pro Unlocked</span>
+            </span>
+          )}
+        </h2>
+        <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-4">
+          {/* Theme Selector */}
+          <div>
+            <label className="block text-xs text-zinc-300 font-semibold mb-2">
+              Default Receipt Background Theme
+            </label>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {RECEIPT_THEMES.map((theme) => {
+                const isSelected = (settings.receiptTheme || 'gold') === theme.id;
+                return (
+                  <button
+                    key={theme.id}
+                    type="button"
+                    onClick={() => onUpdateSettings({ receiptTheme: theme.id })}
+                    className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400/50 text-white font-bold'
+                        : 'bg-[#0d0e14] border-zinc-800 text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <div className={`h-2 rounded-full mb-1.5 bg-gradient-to-r ${theme.previewColor}`} />
+                    <span className="text-xs">{theme.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Custom Receipt Note / Footer Message */}
+          <div className="pt-2 border-t border-zinc-800/60">
+            <label className="block text-xs text-zinc-300 font-semibold mb-1">
+              Custom Receipt Note (Printed on Receipts)
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. Thank you for your business! Follow @store"
+              value={settings.customReceiptNote || ''}
+              onChange={(e) => onUpdateSettings({ customReceiptNote: e.target.value })}
+              className="w-full bg-[#0d0e14] border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 4. TRANSACTIONS & EXPORT */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
-          Transactions
+          Transactions & Reports
         </h2>
         <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-800/60">
           <button
@@ -262,7 +338,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 3. APPEARANCE */}
+      {/* 5. APPEARANCE */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           Appearance
@@ -295,7 +371,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 4. PREFERENCES & CURRENCY */}
+      {/* 6. PREFERENCES & CURRENCY */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           Preferences
@@ -362,7 +438,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 5. SECURITY & BIOMETRICS */}
+      {/* 7. SECURITY & BIOMETRICS */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           Security
@@ -412,12 +488,45 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 6. APP & ABOUT */}
+      {/* 8. APP & ABOUT */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           App
         </h2>
         <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-800/60">
+          {/* PWA Install Button */}
+          {onOpenInstallPrompt && (
+            <button
+              type="button"
+              onClick={onOpenInstallPrompt}
+              className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3">
+                {appInstalled ? (
+                  <Smartphone className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <Download className="w-5 h-5 text-amber-400" />
+                )}
+                <div>
+                  <div className="text-sm font-semibold text-white flex items-center gap-2">
+                    <span>{appInstalled ? 'Merchant X App Installed' : 'Install Merchant X App'}</span>
+                    {appInstalled && (
+                      <span className="px-1.5 py-0.2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold uppercase rounded">
+                        Installed
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    {appInstalled
+                      ? 'Running in standalone mobile application mode'
+                      : 'Install to your Home Screen for faster offline & full-screen POS'}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-500" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={handleShareApp}
@@ -467,7 +576,7 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 7. APP VERSION & BRANDING */}
+      {/* 9. APP VERSION & BRANDING */}
       <div className="pt-6 pb-2 text-center space-y-2">
         <div className="flex items-center justify-center gap-2">
           <MerchantXLogo size="xs" />

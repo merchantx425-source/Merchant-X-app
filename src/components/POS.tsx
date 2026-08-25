@@ -10,12 +10,9 @@ import { openWalletModal } from '../config/appkit';
 import {
   Settings as SettingsIcon,
   Wallet,
-  RefreshCw,
   CheckCircle2,
   AlertCircle,
   Sparkles,
-  Lock,
-  ArrowRight,
 } from 'lucide-react';
 
 interface POSProps {
@@ -60,7 +57,6 @@ export const POS: React.FC<POSProps> = ({
   settings,
   onRefreshRates,
   ratesError,
-  lastRatesUpdated,
   isPro = false,
   freeTransactionsRemaining = 10,
   onNavigateToSubscription,
@@ -147,9 +143,9 @@ export const POS: React.FC<POSProps> = ({
   }, [walletState, assetConfig.networkFamily]);
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col justify-between px-3 sm:px-4 pt-1.5 pb-24 sm:pb-28 select-none">
+    <div className="w-full max-w-md mx-auto flex flex-col justify-between px-3 sm:px-4 pt-1 pb-28 sm:pb-32 select-none min-h-[calc(100dvh-4.5rem)]">
       {/* 1. Terminal Top Bar */}
-      <header className="flex items-center justify-between py-1.5 border-b border-purple-900/20">
+      <header className="flex items-center justify-between py-1.5 border-b border-purple-900/20 shrink-0">
         {/* Brand */}
         <div className="flex items-center gap-2">
           <MerchantXLogo size="xs" />
@@ -300,7 +296,7 @@ export const POS: React.FC<POSProps> = ({
       </section>
 
       {/* 3. Crypto Asset Selection */}
-      <section className="my-1">
+      <section className="my-1 shrink-0">
         <AssetSelector
           selectedAsset={selectedAsset}
           onSelectAsset={onSelectAsset}
@@ -311,8 +307,8 @@ export const POS: React.FC<POSProps> = ({
         />
       </section>
 
-      {/* 4. Compact Numeric Keypad & High-Visibility Charge Button */}
-      <section className="mt-2 pb-2">
+      {/* 4. Compact Numeric Keypad & High-Visibility Framed Charge Button */}
+      <section className="mt-1.5 shrink-0">
         <NumericKeypad
           onDigitPress={onDigitPress}
           onDeletePress={onDeletePress}

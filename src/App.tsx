@@ -32,6 +32,7 @@ import { Navbar } from './components/Navbar';
 import { WalletModal } from './components/WalletModal';
 import { ChargeFlowModal } from './components/ChargeFlowModal';
 import { ReceiptModal } from './components/ReceiptModal';
+import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 
 const STORAGE_KEYS = {
   SETTINGS: 'merchant_x_settings_v1',
@@ -175,6 +176,7 @@ export default function App() {
     BTC: 102000000,
     ETH: 4980000,
     USDT: 1580,
+    USDC: 1580,
     POL: 660,
     VERSE: 0.02844,
   });
@@ -182,6 +184,7 @@ export default function App() {
     BTC: 96000,
     ETH: 3100,
     USDT: 1,
+    USDC: 1,
     POL: 0.42,
     VERSE: 0.000018,
   });
@@ -192,6 +195,7 @@ export default function App() {
   const [balances, setBalances] = useState<Record<CryptoAsset, AssetBalance>>({
     VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false },
     POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false },
+    USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false },
     USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false },
     ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false },
     BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false },
@@ -202,6 +206,7 @@ export default function App() {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false);
   const [activeReceiptTx, setActiveReceiptTx] = useState<TransactionRecord | null>(null);
+  const [showPwaInstallModal, setShowPwaInstallModal] = useState(false);
 
   // Derive Pro status & Transaction Usage
   const isPro = useMemo(() => {
@@ -582,6 +587,8 @@ export default function App() {
             onSelectReceipt={(tx) => setActiveReceiptTx(tx)}
             language={settings.language}
             settings={settings}
+            isPro={isPro}
+            onUpgradePro={() => setActiveTab('subscription')}
           />
         )}
 
@@ -609,6 +616,7 @@ export default function App() {
             onOpenSubscription={() => setActiveTab('subscription')}
             subscriptionState={subscriptionState}
             isPro={isPro}
+            onOpenInstallPrompt={() => setShowPwaInstallModal(true)}
           />
         )}
       </main>
@@ -653,6 +661,16 @@ export default function App() {
         merchantLocation={settings.merchantLocation}
         language={settings.language}
         onNewPayment={handleNewPayment}
+        isPro={isPro}
+        activeReceiptTheme={settings.receiptTheme || 'gold'}
+        onSelectReceiptTheme={(theme) => handleUpdateSettings({ receiptTheme: theme })}
+        customReceiptNote={settings.customReceiptNote}
+      />
+
+      {/* 8. PWA Install Modal / Floating Prompt */}
+      <PWAInstallPrompt
+        forceOpen={showPwaInstallModal}
+        onClose={() => setShowPwaInstallModal(false)}
       />
     </div>
   );

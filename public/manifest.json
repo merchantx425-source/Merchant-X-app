@@ -1,0 +1,56 @@
+{
+  "name": "Merchant X — Crypto Payment POS",
+  "short_name": "Merchant X",
+  "description": "Next-generation cryptocurrency point-of-sale terminal with instant multi-chain settlement.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0a0b0e",
+  "theme_color": "#0a0b0e",
+  "dir": "ltr",
+  "lang": "en",
+  "categories": ["finance", "business", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "POS Terminal",
+      "short_name": "Terminal",
+      "description": "Open Point of Sale Charge Screen",
+      "url": "/?tab=pos",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Ledger & Receipts",
+      "short_name": "History",
+      "description": "View settled blockchain transactions",
+      "url": "/?tab=history",
+      "icons": [{ "src": "/pwa-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

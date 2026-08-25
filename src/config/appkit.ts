@@ -178,3 +178,67 @@ export async function disconnectWalletKit(): Promise<void> {
     console.warn('[Merchant X] Disconnect warning:', err);
   }
 }
+
+/**
+ * Get active Web3 provider & signer for 1-click on-chain signing
+ */
+export async function getWeb3ProviderAndSigner(): Promise<{
+  provider: any;
+  signer: any;
+  address: string;
+  rawProvider: any;
+}> {
+  const { ethers } = await import('ethers');
+
+  // Check 1: Injected window.ethereum (MetaMask, Rabby, Coinbase, Trust, OKX, Phantom, Brave, etc.)
+  if (typeof window !== 'undefined' && (window as any).ethereum) {
+    const rawProvider = (window as any).ethereum;
+    try {
+      const accounts = await rawProvider.request({ method: 'eth_requestAccounts' });
+      if (accounts && accounts.length > 0) {
+        const browserProvider = new ethers.BrowserProvider(rawProvider);
+        const signer = await browserProvider.getSigner();
+        const address = await signer.getAddress();
+        return { provider: browserProvider, signer, address, rawProvider };
+      }
+    } catch (injectedErr) {
+      console.warn('[Merchant X] Injected requestAccounts notice:', injectedErr);
+    }
+  }
+
+  // Check 2: Reown AppKit / Wagmi wallet provider
+  try {
+    const kit = await getSafeAppKit();
+    if (kit) {
+      const rawWalletProvider = typeof kit.getWalletProvider === 'function' ? kit.getWalletProvider() : null;
+      if (rawWalletProvider) {
+        const browserProvider = new ethers.BrowserProvider(rawWalletProvider);
+        const signer = await browserProvider.getSigner();
+        const address = await signer.getAddress();
+        return { provider: browserProvider, signer, address, rawProvider: rawWalletProvider };
+      }
+    }
+  } catch (kitErr) {
+    console.warn('[Merchant X] Kit wallet provider notice:', kitErr);
+  }
+
+  // Check 3: If not yet connected, open AppKit modal to let user connect
+  const openRes = await openWalletModal();
+  if (!openRes.success) {
+    throw new Error('Please connect your Web3 wallet to proceed.');
+  }
+
+  // Wait briefly for connection event
+  await new Promise((r) => setTimeout(r, 1200));
+
+  if (typeof window !== 'undefined' && (window as any).ethereum) {
+    const rawProvider = (window as any).ethereum;
+    const browserProvider = new ethers.BrowserProvider(rawProvider);
+    const signer = await browserProvider.getSigner();
+    const address = await signer.getAddress();
+    return { provider: browserProvider, signer, address, rawProvider };
+  }
+
+  throw new Error('Please approve the connection in your Web3 wallet.');
+}
+

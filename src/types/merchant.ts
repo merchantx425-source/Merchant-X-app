@@ -1,10 +1,11 @@
-export type CryptoAsset = 'VERSE' | 'POL' | 'USDT' | 'ETH' | 'BTC';
+export type CryptoAsset = 'VERSE' | 'POL' | 'USDT' | 'USDC' | 'ETH' | 'BTC';
 export type BlockchainNetwork = 'Polygon' | 'Ethereum' | 'Bitcoin';
 export type FiatCurrency = 'NGN' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'ZAR' | 'KES' | 'GHS';
 export type TxStatus = 'paid' | 'pending' | 'failed';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type AppTab = 'pos' | 'transactions' | 'subscription' | 'settings';
 export type PlanType = 'free' | 'pro';
+export type ReceiptTheme = 'gold' | 'neon' | 'emerald' | 'obsidian' | 'paper' | 'verse';
 
 export interface SubscriptionRecord {
   id: string;
@@ -99,4 +100,7 @@ export interface AppSettings {
   merchantLocation: string;
   customBtcReceivingAddress: string;
   customEvmReceivingAddress: string;
+  receiptTheme?: ReceiptTheme;
+  customReceiptNote?: string;
+  receiptBadge?: string;
 }

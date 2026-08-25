@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Background Badge -->
+  <rect width="512" height="512" rx="115" fill="#0a0b0e"/>
+  <rect x="8" y="8" width="496" height="496" rx="107" stroke="#f59e0b" stroke-opacity="0.25" stroke-width="4"/>
+
+  <!-- Subtle Radial Glow -->
+  <circle cx="256" cy="256" r="180" fill="#f59e0b" fill-opacity="0.08"/>
+
+  <!-- Logo Graphics (Merchant X) -->
+  <g transform="translate(56, 56) scale(1)">
+    <defs>
+      <linearGradient id="mBlueLeft" x1="60" y1="120" x2="160" y2="340" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#1e3a5f" />
+        <stop offset="50%" stop-color="#142c4b" />
+        <stop offset="100%" stop-color="#0a1728" />
+      </linearGradient>
+
+      <linearGradient id="mBlueLeftBevel" x1="50" y1="110" x2="100" y2="330" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#3b6999" />
+        <stop offset="40%" stop-color="#224872" />
+        <stop offset="100%" stop-color="#0d1f35" />
+      </linearGradient>
+
+      <linearGradient id="mBlueRight" x1="240" y1="120" x2="340" y2="340" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#254770" />
+        <stop offset="50%" stop-color="#163152" />
+        <stop offset="100%" stop-color="#0b1a2d" />
+      </linearGradient>
+
+      <linearGradient id="mBlueRightBevel" x1="280" y1="110" x2="350" y2="340" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#4377ae" />
+        <stop offset="60%" stop-color="#1d3d63" />
+        <stop offset="100%" stop-color="#0b1726" />
+      </linearGradient>
+
+      <linearGradient id="goldBeamMain" x1="120" y1="110" x2="320" y2="330" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#f7e1a0" />
+        <stop offset="25%" stop-color="#dfb75c" />
+        <stop offset="60%" stop-color="#a47728" />
+        <stop offset="85%" stop-color="#cfa54c" />
+        <stop offset="100%" stop-color="#7a5418" />
+      </linearGradient>
+
+      <linearGradient id="goldBeamBevel" x1="100" y1="90" x2="350" y2="300" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#fff8e1" />
+        <stop offset="30%" stop-color="#f3d282" />
+        <stop offset="70%" stop-color="#9b6f20" />
+        <stop offset="100%" stop-color="#573a0e" />
+      </linearGradient>
+
+      <linearGradient id="goldSlash" x1="390" y1="70" x2="130" y2="340" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#fffae6" />
+        <stop offset="20%" stop-color="#ebd07e" />
+        <stop offset="55%" stop-color="#a77a28" />
+        <stop offset="80%" stop-color="#c89f46" />
+        <stop offset="100%" stop-color="#6c4811" />
+      </linearGradient>
+
+      <linearGradient id="goldGleam" x1="390" y1="75" x2="260" y2="210" gradientUnits="userSpaceOnUse">
+        <stop offset="0%" stop-color="#ffffff" />
+        <stop offset="40%" stop-color="#e8c777" />
+        <stop offset="100%" stop-color="#966d1f" />
+      </linearGradient>
+    </defs>
+
+    <polygon points="70,115 125,115 125,320 100,320 70,290" fill="url(#mBlueLeftBevel)" />
+    <polygon points="80,120 120,120 120,320 80,320" fill="url(#mBlueLeft)" />
+    <polygon points="80,120 95,145 95,300 80,320" fill="#315c8c" opacity="0.8" />
+    <polygon points="120,120 165,120 200,215 170,215" fill="url(#mBlueLeft)" />
+    <polygon points="120,120 135,120 185,215 170,215" fill="#254a73" />
+
+    <polygon points="280,120 320,120 320,320 280,320" fill="url(#mBlueRight)" />
+    <polygon points="280,120 320,120 335,140 335,300 320,320 280,320" fill="url(#mBlueRightBevel)" />
+    <polygon points="305,125 320,120 320,320 305,300" fill="#142c4b" opacity="0.9" />
+    <polygon points="235,120 280,120 230,215 200,215" fill="url(#mBlueRight)" />
+    <polygon points="265,120 280,120 230,215 215,215" fill="#2a5280" />
+
+    <polygon points="170,215 200,285 230,215 200,215" fill="#0c1d32" />
+
+    <polygon points="130,115 180,115 320,320 270,320" fill="url(#goldBeamMain)" />
+    <polygon points="130,115 155,115 295,320 270,320" fill="url(#goldBeamBevel)" />
+
+    <polygon points="130,320 180,320 395,78 350,115 290,115" fill="url(#goldSlash)" />
+    <polygon points="290,115 350,115 395,78 340,145" fill="url(#goldGleam)" />
+    <polygon points="130,320 155,320 275,175 250,175" fill="#fff3cf" opacity="0.6" />
+    <polygon points="155,320 180,320 295,185 275,185" fill="#6d4814" />
+
+    <polygon points="190,205 210,185 230,205 210,225" fill="#fffbe8" opacity="0.4" />
+    <circle cx="395" cy="78" r="3.5" fill="#ffffff" />
+  </g>
+</svg>

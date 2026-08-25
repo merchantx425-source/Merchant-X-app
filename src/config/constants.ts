@@ -38,6 +38,18 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     iconColor: '#26A17B',
     badge: 'Polygon / ERC-20',
   },
+  USDC: {
+    symbol: 'USDC',
+    name: 'USD Coin',
+    network: 'Polygon',
+    networkFamily: 'evm',
+    decimals: 6,
+    // Canonical Native USDC on Polygon PoS (and bridged 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
+    contractAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+    coingeckoId: 'usd-coin',
+    iconColor: '#2775CA',
+    badge: 'Polygon / ERC-20',
+  },
   ETH: {
     symbol: 'ETH',
     name: 'Ethereum',
@@ -60,7 +72,7 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
   },
 };
 
-export const ASSET_ORDER: CryptoAsset[] = ['VERSE', 'POL', 'USDT', 'ETH', 'BTC'];
+export const ASSET_ORDER: CryptoAsset[] = ['VERSE', 'POL', 'USDT', 'USDC', 'ETH', 'BTC'];
 
 export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
   NGN: {

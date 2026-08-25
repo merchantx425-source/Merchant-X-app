@@ -98,9 +98,9 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     fiatPerUsd: number;
     cryptoInFiat: Record<CryptoAsset, number>;
   }>({
-    cryptoUsd: { BTC: 64500, ETH: 3150, USDT: 1.0, POL: 0.42, VERSE: 0.000185 },
+    cryptoUsd: { BTC: 64500, ETH: 3150, USDT: 1.0, USDC: 1.0, POL: 0.42, VERSE: 0.000185 },
     fiatPerUsd: 1560,
-    cryptoInFiat: { BTC: 100620000, ETH: 4914000, USDT: 1560, POL: 655.2, VERSE: 0.2886 },
+    cryptoInFiat: { BTC: 100620000, ETH: 4914000, USDT: 1560, USDC: 1560, POL: 655.2, VERSE: 0.2886 },
   });
 
   // Wallet
@@ -124,6 +124,7 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [balances, setBalances] = useState<Record<CryptoAsset, AssetBalance>>({
     VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false, error: null },
     POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+    USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
     USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false, error: null },
     ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false, error: null },
     BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false, error: null },

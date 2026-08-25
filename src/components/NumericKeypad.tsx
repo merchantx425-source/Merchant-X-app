@@ -41,7 +41,7 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
   };
 
   return (
-    <div className="w-full flex flex-col gap-2.5">
+    <div className="w-full flex flex-col gap-2">
       {/* 4x3 Grid Keypad */}
       <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
         {/* Row 1 */}
@@ -138,8 +138,8 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
         </button>
       </div>
 
-      {/* Prominent High-Visibility Charge Button with 100% visible distinct edges on all sides */}
-      <div className="w-full pt-1">
+      {/* Prominent Charge Button with 100% visible distinct edges on all sides */}
+      <div className="w-full pt-1.5 pb-1 px-0.5">
         <button
           type="button"
           onClick={() => {
@@ -147,10 +147,10 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
             onChargePress();
           }}
           disabled={isChargeDisabled}
-          className={`w-full py-3.5 sm:py-4 px-6 rounded-2xl font-black text-base sm:text-lg tracking-wide uppercase font-display flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer shadow-lg relative overflow-hidden select-none ${
+          className={`w-full py-4 px-6 rounded-2xl font-black text-base sm:text-lg tracking-wide uppercase font-display flex items-center justify-center gap-2.5 transition-all duration-200 cursor-pointer shadow-lg relative overflow-hidden select-none ${
             isChargeDisabled
               ? 'bg-[#181a26] text-zinc-400 border-2 border-zinc-700/80 shadow-md cursor-not-allowed hover:bg-[#1a1c2a]'
-              : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black border-2 border-amber-300/90 shadow-xl shadow-amber-500/25 ring-2 ring-amber-400/40 hover:brightness-110 active:scale-[0.98]'
+              : 'bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black border-2 border-amber-300 shadow-xl shadow-amber-500/25 ring-2 ring-amber-400/40 hover:brightness-110 active:scale-[0.98]'
           }`}
         >
           {!isChargeDisabled && <Zap className="w-5 h-5 fill-current text-black" />}

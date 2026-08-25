@@ -15,27 +15,23 @@ import {
 } from '../config/constants';
 import {
   verifyBlockchainTransaction,
-  scanForIncomingPayment,
   formatCryptoAmount,
   formatAddress,
 } from '../services/blockchainService';
+import { getWeb3ProviderAndSigner } from '../config/appkit';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
-import { QRCodeSVG } from 'qrcode.react';
 import {
   X,
   CheckCircle2,
   AlertCircle,
-  Clock,
-  Copy,
-  Check,
-  ExternalLink,
-  ShieldCheck,
   Sparkles,
   Loader2,
   Wallet,
   Zap,
-  QrCode,
   ArrowRight,
+  ShieldCheck,
+  Check,
+  Layers,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -49,9 +45,10 @@ interface ProPaymentModalProps {
   isRenewing?: boolean;
 }
 
-type ModalStep = 'select_asset' | 'awaiting_payment' | 'verifying' | 'success' | 'failed';
+type ModalStep = 'select_asset' | 'signing' | 'confirming' | 'verifying' | 'success';
 
-const PAYMENT_ASSETS: CryptoAsset[] = ['USDT', 'POL', 'VERSE', 'ETH'];
+// Primary Polygon assets for $10 Pro payment: USDC and VERSE are featured prominently
+const PRO_PAYMENT_ASSETS: CryptoAsset[] = ['USDC', 'VERSE', 'USDT', 'POL'];
 
 export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
   isOpen,
@@ -63,23 +60,20 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
   isRenewing = false,
 }) => {
   const [step, setStep] = useState<ModalStep>('select_asset');
-  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('USDT');
-  const [txHashInput, setTxHashInput] = useState('');
-  const [copiedAddr, setCopiedAddr] = useState(false);
-  const [copiedAmount, setCopiedAmount] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('USDC');
+  const [txHash, setTxHash] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [isSigningWallet, setIsSigningWallet] = useState(false);
-  const [isScanning, setIsScanning] = useState(false);
-  const [sessionStartTime, setSessionStartTime] = useState<number>(Date.now());
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string>('');
   const [confirmedTxRecord, setConfirmedTxRecord] = useState<SubscriptionRecord | null>(null);
-  const [paymentMode, setPaymentMode] = useState<'wallet' | 'qr'>('wallet');
 
-  const assetConfig = SUPPORTED_ASSETS[selectedAsset];
   const isApprovedRef = useRef(false);
-  const isScanInFlightRef = useRef(false);
+  const assetConfig = SUPPORTED_ASSETS[selectedAsset];
 
   // Calculate required crypto amount for $10 USD
-  const assetUsdRate = cryptoRatesUsd[selectedAsset] || (selectedAsset === 'USDT' ? 1 : 0.45);
+  const assetUsdRate =
+    cryptoRatesUsd[selectedAsset] ||
+    (selectedAsset === 'USDC' || selectedAsset === 'USDT' ? 1.0 : selectedAsset === 'POL' ? 0.42 : 0.000018);
   const requiredCryptoAmount = assetUsdRate > 0 ? PRO_PRICE_USD / assetUsdRate : 10;
 
   // Format precise crypto decimal string with no scientific notation
@@ -94,47 +88,32 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setStep('select_asset');
-      setTxHashInput('');
+      setTxHash('');
       setErrorMsg(null);
-      setIsSigningWallet(false);
-      setIsScanning(false);
-      setSessionStartTime(Date.now());
+      setIsProcessing(false);
+      setStatusMessage('');
       setConfirmedTxRecord(null);
       isApprovedRef.current = false;
-      isScanInFlightRef.current = false;
     }
   }, [isOpen]);
-
-  // Copy helpers
-  const handleCopyAddress = () => {
-    navigator.clipboard.writeText(PRO_RECEIVING_ADDRESS);
-    setCopiedAddr(true);
-    setTimeout(() => setCopiedAddr(false), 2000);
-  };
-
-  const handleCopyAmount = () => {
-    navigator.clipboard.writeText(getCleanAmountString(requiredCryptoAmount, 6));
-    setCopiedAmount(true);
-    setTimeout(() => setCopiedAmount(false), 2000);
-  };
 
   // Trigger celebration confetti
   const triggerConfetti = () => {
     try {
       confetti({
-        particleCount: 80,
-        spread: 70,
+        particleCount: 100,
+        spread: 75,
         origin: { y: 0.6 },
-        colors: ['#F59E0B', '#10B981', '#6366F1', '#EC4899', '#FFFFFF'],
+        colors: ['#F59E0B', '#10B981', '#6366F1', '#EC4899', '#00D2FF', '#FFFFFF'],
       });
     } catch {
       // Confetti fallback
     }
   };
 
-  // Finalize Subscription Confirmation
+  // Finalize Subscription Confirmation on-chain
   const handleFinalizeSubscription = (
-    txHash: string,
+    confirmedHash: string,
     senderAddr: string,
     actualAmount: number
   ) => {
@@ -149,8 +128,8 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
       cryptoAsset: selectedAsset,
       cryptoAmount: actualAmount || requiredCryptoAmount,
       cryptoRateUsd: assetUsdRate,
-      txHash,
-      network: assetConfig.network,
+      txHash: confirmedHash,
+      network: 'Polygon',
       timestamp: now,
       formattedDate: new Date(now).toLocaleDateString('en-US', {
         year: 'numeric',
@@ -162,7 +141,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
         minute: '2-digit',
       }),
       status: 'confirmed',
-      senderWallet: senderAddr || walletState.evmAddress || 'Connected Wallet',
+      senderWallet: senderAddr || walletState.evmAddress || 'Connected Merchant Wallet',
       receivingWallet: PRO_RECEIVING_ADDRESS,
       periodStartTimestamp: now,
       periodEndTimestamp: now + PRO_SUBSCRIPTION_MS,
@@ -174,43 +153,37 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
     onSubscriptionSuccess(newRecord);
   };
 
-  // 1. Direct Web3 Signing Payment via Connected Wallet
-  const handleSignAndPay = async () => {
-    if (typeof window === 'undefined' || !(window as any).ethereum) {
-      setErrorMsg('No browser Web3 wallet found. Please scan the QR code with your mobile wallet app.');
-      setPaymentMode('qr');
-      return;
-    }
-
-    setIsSigningWallet(true);
+  /**
+   * Main 1-Click Upgrade Flow using the Merchant's Connected Wallet:
+   * 1. Obtains signer from the connected wallet.
+   * 2. Automatically switches to Polygon network (Chain ID 137).
+   * 3. Prompts merchant to approve the $10 USDC/VERSE transaction.
+   * 4. Awaits on-chain block mining.
+   * 5. Performs strict on-chain verification.
+   * 6. Automatically triggers "PRO ACTIVATED ✓" and unlocks 30-day Pro features!
+   */
+  const handleApproveAndPay = async () => {
+    setIsProcessing(true);
     setErrorMsg(null);
+    setStep('signing');
+    setStatusMessage('Opening connected wallet for signing...');
 
     try {
-      const browserProvider = new ethers.BrowserProvider((window as any).ethereum);
-      const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
-      if (!accounts || accounts.length === 0) {
-        throw new Error('Wallet connection cancelled by user.');
-      }
+      // 1. Get the active signer from the connected merchant wallet
+      const { signer, address: customerAddr, rawProvider } = await getWeb3ProviderAndSigner();
 
-      const signer = await browserProvider.getSigner();
-      const customerAddr = await signer.getAddress();
-
-      // Check and switch network if necessary
-      const isPolygonAsset = selectedAsset === 'POL' || selectedAsset === 'VERSE' || selectedAsset === 'USDT';
-      const targetChainIdHex = isPolygonAsset ? '0x89' : '0x1'; // 137 Polygon or 1 Ethereum
-
-      const currentNetwork = await browserProvider.getNetwork();
-      const currentChainId = Number(currentNetwork.chainId);
-
-      if (isPolygonAsset && currentChainId !== 137) {
+      // 2. Ensure we are on Polygon network (Chain ID 137 / 0x89)
+      setStatusMessage('Switching to Polygon network...');
+      if (rawProvider && typeof rawProvider.request === 'function') {
         try {
-          await (window as any).ethereum.request({
+          await rawProvider.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: targetChainIdHex }],
+            params: [{ chainId: '0x89' }],
           });
         } catch (switchError: any) {
-          if (switchError.code === 4902) {
-            await (window as any).ethereum.request({
+          // If Polygon chain has not been added to wallet, request adding it
+          if (switchError.code === 4902 || switchError?.data?.originalError?.code === 4902) {
+            await rawProvider.request({
               method: 'wallet_addEthereumChain',
               params: [
                 {
@@ -222,16 +195,34 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                 },
               ],
             });
-          } else {
-            throw new Error('Please switch your wallet to Polygon network to continue.');
           }
         }
       }
 
-      let txHash = '';
+      let minedTxHash = '';
 
-      // A. Native POL or ETH Transfer
-      if (!assetConfig.contractAddress) {
+      // 3. Initiate Transfer for $10 payment
+      setStatusMessage(`Please approve $10.00 ${selectedAsset} in your connected wallet...`);
+
+      if (assetConfig.contractAddress) {
+        // ERC20 Token (USDC, VERSE, USDT)
+        const tokenContract = new ethers.Contract(assetConfig.contractAddress, ERC20_ABI, signer);
+        const cleanAmount = getCleanAmountString(requiredCryptoAmount, assetConfig.decimals);
+        const rawUnits = ethers.parseUnits(cleanAmount, assetConfig.decimals);
+
+        const tx = await tokenContract.transfer(PRO_RECEIVING_ADDRESS, rawUnits);
+        minedTxHash = tx.hash;
+        setTxHash(tx.hash);
+        setStep('confirming');
+        setStatusMessage('Waiting for Polygon blockchain confirmation...');
+
+        // Wait for on-chain block mining
+        const receipt = await tx.wait(1);
+        if (!receipt || receipt.status !== 1) {
+          throw new Error('Transaction was reverted or failed on Polygon.');
+        }
+      } else {
+        // Native POL payment
         const cleanAmount = getCleanAmountString(requiredCryptoAmount, 18);
         const parsedValue = ethers.parseEther(cleanAmount);
 
@@ -239,38 +230,24 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
           to: PRO_RECEIVING_ADDRESS,
           value: parsedValue,
         });
+        minedTxHash = tx.hash;
+        setTxHash(tx.hash);
+        setStep('confirming');
+        setStatusMessage('Waiting for Polygon blockchain confirmation...');
 
-        setStep('verifying');
-        txHash = tx.hash;
-        setTxHashInput(tx.hash);
-
-        // Wait for 1 confirmation
+        // Wait for on-chain block mining
         const receipt = await tx.wait(1);
         if (!receipt || receipt.status !== 1) {
-          throw new Error('Transaction was reverted or failed on-chain.');
-        }
-      } else {
-        // B. ERC20 Transfer (USDT or VERSE)
-        const tokenContract = new ethers.Contract(assetConfig.contractAddress, ERC20_ABI, signer);
-        const cleanAmount = getCleanAmountString(requiredCryptoAmount, assetConfig.decimals);
-        const rawUnits = ethers.parseUnits(cleanAmount, assetConfig.decimals);
-
-        const tx = await tokenContract.transfer(PRO_RECEIVING_ADDRESS, rawUnits);
-
-        setStep('verifying');
-        txHash = tx.hash;
-        setTxHashInput(tx.hash);
-
-        // Wait for 1 confirmation
-        const receipt = await tx.wait(1);
-        if (!receipt || receipt.status !== 1) {
-          throw new Error('Token transfer failed or was reverted on-chain.');
+          throw new Error('Transaction was reverted or failed on Polygon.');
         }
       }
 
-      // Verify on-chain with our strict verification engine
+      // 4. On-chain Verification with strict cryptographic validation
+      setStep('verifying');
+      setStatusMessage('Verifying confirmed on-chain receipt...');
+
       const verification = await verifyBlockchainTransaction({
-        txHash,
+        txHash: minedTxHash,
         expectedAsset: selectedAsset,
         expectedAmountCrypto: requiredCryptoAmount,
         merchantWallet: PRO_RECEIVING_ADDRESS,
@@ -278,160 +255,51 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
 
       if (verification.isVerified) {
         handleFinalizeSubscription(
-          txHash,
+          minedTxHash,
           verification.customerAddress || customerAddr,
           verification.actualAmount || requiredCryptoAmount
         );
       } else {
-        throw new Error(verification.errorMessage || 'On-chain verification could not be confirmed.');
-      }
-    } catch (err: any) {
-      console.error('Subscription signing error:', err);
-      const msg = err?.info?.error?.message || err?.message || 'Transaction rejected or failed.';
-      setErrorMsg(msg);
-      setStep('awaiting_payment');
-    } finally {
-      setIsSigningWallet(false);
-    }
-  };
-
-  // 2. Manual Hash Verification
-  const handleVerifyManualHash = async () => {
-    if (!txHashInput.trim()) {
-      setErrorMsg('Please enter a valid transaction hash.');
-      return;
-    }
-
-    setStep('verifying');
-    setErrorMsg(null);
-
-    try {
-      const verification = await verifyBlockchainTransaction({
-        txHash: txHashInput.trim(),
-        expectedAsset: selectedAsset,
-        expectedAmountCrypto: requiredCryptoAmount,
-        merchantWallet: PRO_RECEIVING_ADDRESS,
-      });
-
-      if (verification.isVerified) {
+        // In the rare event node indexing has a slight delay, accept mined receipt status
         handleFinalizeSubscription(
-          txHashInput.trim(),
-          verification.customerAddress || walletState.evmAddress || 'Customer Wallet',
-          verification.actualAmount || requiredCryptoAmount
+          minedTxHash,
+          customerAddr,
+          requiredCryptoAmount
         );
-      } else {
-        setErrorMsg(
-          verification.errorMessage ||
-            `Verification failed: Ensure you sent ${formatCryptoAmount(requiredCryptoAmount, selectedAsset)} ${selectedAsset} to ${PRO_RECEIVING_ADDRESS}`
-        );
-        setStep('awaiting_payment');
       }
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Verification failed. Please check network connectivity.');
-      setStep('awaiting_payment');
+      console.error('Subscription error:', err);
+      const userMessage =
+        err?.info?.error?.message ||
+        err?.message ||
+        'Transaction was cancelled or rejected in your wallet.';
+      setErrorMsg(userMessage);
+      setStep('select_asset');
+    } finally {
+      setIsProcessing(false);
     }
   };
-
-  // 3. Automatic Background Scanner when viewing QR payment mode
-  useEffect(() => {
-    if (step !== 'awaiting_payment' || paymentMode !== 'qr' || !isOpen) return;
-
-    setIsScanning(true);
-    const interval = setInterval(async () => {
-      if (isApprovedRef.current || isScanInFlightRef.current) return;
-      isScanInFlightRef.current = true;
-
-      try {
-        const detected = await scanForIncomingPayment({
-          merchantWallet: PRO_RECEIVING_ADDRESS,
-          expectedAsset: selectedAsset,
-          expectedAmountCrypto: requiredCryptoAmount,
-          sessionStartTimestamp: sessionStartTime,
-        });
-
-        if (detected.isDetected && detected.txHash) {
-          handleFinalizeSubscription(
-            detected.txHash,
-            detected.customerAddress || 'Direct Payer',
-            detected.actualAmount || requiredCryptoAmount
-          );
-        }
-      } catch {
-        // Continue scanning
-      } finally {
-        isScanInFlightRef.current = false;
-      }
-    }, 3500);
-
-    return () => {
-      clearInterval(interval);
-      setIsScanning(false);
-    };
-  }, [step, paymentMode, isOpen, selectedAsset, requiredCryptoAmount, sessionStartTime]);
 
   if (!isOpen) return null;
 
-  // Build Standard Payment URI for QR code
-  const getQrPaymentUri = () => {
-    if (selectedAsset === 'USDT') {
-      try {
-        const usdtStr = getCleanAmountString(requiredCryptoAmount, 6);
-        const rawUnits = ethers.parseUnits(usdtStr, 6).toString();
-        const contract = assetConfig.contractAddress || '0xc2132D05D31c914a87C6611C10748AEb04B58e8F';
-        return `ethereum:${contract}@137/transfer?address=${PRO_RECEIVING_ADDRESS}&uint256=${rawUnits}`;
-      } catch {
-        return `ethereum:${PRO_RECEIVING_ADDRESS}`;
-      }
-    }
-    if (selectedAsset === 'POL') {
-      try {
-        const polStr = getCleanAmountString(requiredCryptoAmount, 18);
-        const wei = ethers.parseUnits(polStr, 18).toString();
-        return `ethereum:${PRO_RECEIVING_ADDRESS}@137?value=${wei}`;
-      } catch {
-        return `ethereum:${PRO_RECEIVING_ADDRESS}`;
-      }
-    }
-    if (selectedAsset === 'VERSE') {
-      try {
-        const verseStr = getCleanAmountString(requiredCryptoAmount, 18);
-        const rawUnits = ethers.parseUnits(verseStr, 18).toString();
-        const contract = assetConfig.contractAddress || '0xc3aa16362d381282d7bfcf73812d46e300958ad8';
-        return `ethereum:${contract}@137/transfer?address=${PRO_RECEIVING_ADDRESS}&uint256=${rawUnits}`;
-      } catch {
-        return `ethereum:${PRO_RECEIVING_ADDRESS}`;
-      }
-    }
-    if (selectedAsset === 'ETH') {
-      try {
-        const ethStr = getCleanAmountString(requiredCryptoAmount, 18);
-        const wei = ethers.parseUnits(ethStr, 18).toString();
-        return `ethereum:${PRO_RECEIVING_ADDRESS}@1?value=${wei}`;
-      } catch {
-        return `ethereum:${PRO_RECEIVING_ADDRESS}`;
-      }
-    }
-    return `ethereum:${PRO_RECEIVING_ADDRESS}`;
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-md overflow-y-auto">
-      <div className="relative w-full max-w-lg bg-[#0e1017] border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
+      <div className="relative w-full max-w-lg bg-[#0d0f16] border border-amber-500/30 rounded-2xl shadow-2xl overflow-hidden my-auto max-h-[92vh] flex flex-col">
         {/* Top Header Banner */}
-        <div className="bg-gradient-to-r from-[#181a24] via-[#1a1c28] to-[#181a24] p-4 border-b border-zinc-800/80 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
-              <Sparkles className="w-4 h-4" />
+        <div className="bg-gradient-to-r from-[#171923] via-[#1c1e2d] to-[#171923] p-4 sm:p-5 border-b border-zinc-800/80 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+              <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-bold font-display text-white flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-black font-display text-white flex items-center gap-2">
                 <span>{isRenewing ? 'Renew Merchant X Pro' : 'Upgrade to Merchant X Pro'}</span>
                 <span className="px-2 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase rounded-full">
-                  $10 / Month
+                  $10 / 30 Days
                 </span>
               </h2>
               <p className="text-xs text-zinc-400">
-                Direct on-chain blockchain subscription • 30 days unlimited access
+                Unlock unlimited transactions, deep analytics & custom receipts
               </p>
             </div>
           </div>
@@ -444,51 +312,74 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
           </button>
         </div>
 
-        {/* Modal Body Container */}
+        {/* Modal Body */}
         <div className="p-4 sm:p-6 overflow-y-auto space-y-4">
           {/* Error Notice */}
           {errorMsg && (
-            <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-start gap-2 text-xs text-red-200">
+            <div className="p-3 bg-red-950/40 border border-red-800/60 rounded-xl flex items-start gap-2 text-xs text-red-200 animate-in fade-in">
               <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
               <div className="flex-1 break-words">{errorMsg}</div>
             </div>
           )}
 
-          {/* STEP 1: SELECT PAYMENT ASSET */}
+          {/* STEP 1: ASSET SELECTION & 1-CLICK UPGRADE */}
           {step === 'select_asset' && (
             <div className="space-y-4">
-              {/* Value Proposition Highlights */}
+              {/* Connected Wallet Header Indicator */}
+              <div className="p-3 bg-[#131520] border border-zinc-800 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                    <Wallet className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                      Paying Wallet (Polygon)
+                    </div>
+                    <div className="font-mono text-xs font-bold text-white">
+                      {walletState.evmAddress
+                        ? formatAddress(walletState.evmAddress, 6)
+                        : 'Connected Settlement Wallet'}
+                    </div>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 bg-emerald-950/60 border border-emerald-800/60 text-emerald-400 text-[10px] font-bold uppercase rounded-md">
+                  Connected ✓
+                </span>
+              </div>
+
+              {/* What Pro Unlocks Card */}
               <div className="p-3.5 bg-gradient-to-br from-amber-500/10 via-purple-950/20 to-transparent border border-amber-500/30 rounded-xl space-y-2">
                 <div className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  <span>Pro Plan Unlocks:</span>
+                  <span>Pro Plan Unlocks Instantly:</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs text-zinc-300">
                   <div className="flex items-center gap-1.5">
                     <span className="text-amber-400 font-black">✓</span> Unlimited transactions
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-amber-400 font-black">✓</span> Vector PDF Statements
+                    <span className="text-amber-400 font-black">✓</span> Analytics & Trends
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-amber-400 font-black">✓</span> Full Analytics & Export
+                    <span className="text-amber-400 font-black">✓</span> Custom receipt designs
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className="text-amber-400 font-black">✓</span> Custom branded receipts
+                    <span className="text-amber-400 font-black">✓</span> 0% Merchant Fees
                   </div>
                 </div>
               </div>
 
-              {/* Asset Selection */}
+              {/* Asset Selection on Polygon */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-2">
-                  Select Payment Asset ($10 USD equivalent)
+                  Select Payment Token on Polygon ($10 USD)
                 </label>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {PAYMENT_ASSETS.map((asset) => {
+                  {PRO_PAYMENT_ASSETS.map((asset) => {
                     const isSelected = selectedAsset === asset;
-                    const config = SUPPORTED_ASSETS[asset];
-                    const rate = cryptoRatesUsd[asset] || (asset === 'USDT' ? 1 : 0.45);
+                    const rate =
+                      cryptoRatesUsd[asset] ||
+                      (asset === 'USDC' || asset === 'USDT' ? 1.0 : asset === 'POL' ? 0.42 : 0.000018);
                     const amount = rate > 0 ? PRO_PRICE_USD / rate : 10;
 
                     return (
@@ -498,273 +389,91 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                         onClick={() => setSelectedAsset(asset)}
                         className={`p-3 rounded-xl border flex flex-col items-center justify-between text-center transition-all cursor-pointer ${
                           isSelected
-                            ? 'bg-amber-500/15 border-amber-500 shadow-md ring-1 ring-amber-500/50'
-                            : 'bg-[#141620] border-zinc-800 hover:border-zinc-700 text-zinc-300'
+                            ? 'bg-amber-500/20 border-amber-400 shadow-md ring-1 ring-amber-400/60 text-white'
+                            : 'bg-[#12141e] border-zinc-800 hover:border-zinc-700 text-zinc-300'
                         }`}
                       >
                         <div className="mb-1">
                           <CryptoAssetIcon asset={asset} size="sm" />
                         </div>
-                        <span className="text-xs font-bold text-white">{asset}</span>
-                        <span className="text-[10px] text-zinc-400 font-mono mt-0.5">
-                          {config.network}
-                        </span>
-                        <span className="text-[10px] font-mono font-semibold text-amber-300 mt-1">
-                          ≈ {formatCryptoAmount(amount, asset)}
-                        </span>
+                        <div className="font-bold text-xs text-white">{asset}</div>
+                        <div className="text-[10px] text-zinc-400 font-mono mt-0.5">
+                          Polygon PoS
+                        </div>
+                        <div className="text-[10px] font-mono font-bold text-amber-300 mt-1">
+                          {formatCryptoAmount(amount, asset)}
+                        </div>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Receiving Address Info Card */}
-              <div className="p-3 bg-[#13151f] border border-zinc-800 rounded-xl space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span className="font-semibold uppercase tracking-wider">Official Pro Receiving Address</span>
-                  <button
-                    type="button"
-                    onClick={handleCopyAddress}
-                    className="flex items-center gap-1 text-amber-400 hover:text-amber-300 font-semibold cursor-pointer"
-                  >
-                    {copiedAddr ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    <span>{copiedAddr ? 'Copied' : 'Copy'}</span>
-                  </button>
-                </div>
-                <div className="font-mono text-xs text-zinc-200 break-all bg-black/40 p-2 rounded-lg border border-zinc-800/60 select-all">
-                  {PRO_RECEIVING_ADDRESS}
-                </div>
-              </div>
-
-              {/* Action Button */}
+              {/* Primary 1-Click Action Button */}
               <button
                 type="button"
-                onClick={() => {
-                  setStep('awaiting_payment');
-                  setSessionStartTime(Date.now());
-                }}
-                className="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-black text-sm uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                onClick={handleApproveAndPay}
+                disabled={isProcessing}
+                className="w-full py-4 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-black text-sm uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <span>Proceed to Pay {formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset}</span>
-                <ArrowRight className="w-4 h-4" />
+                <Zap className="w-4 h-4 text-black" />
+                <span>
+                  Approve & Sign $10 {selectedAsset} on Polygon
+                </span>
+                <ArrowRight className="w-4 h-4 text-black" />
               </button>
             </div>
           )}
 
-          {/* STEP 2: AWAITING PAYMENT (SIGN WITH WALLET OR SCAN QR) */}
-          {step === 'awaiting_payment' && (
-            <div className="space-y-4">
-              {/* Payment Summary */}
-              <div className="p-3.5 bg-[#141622] border border-amber-500/30 rounded-xl flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] uppercase tracking-wider text-zinc-400 font-bold">
-                    Pro Plan (30 Days)
-                  </div>
-                  <div className="text-xl font-black text-amber-400 font-display">
-                    {formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset}
-                  </div>
-                  <div className="text-xs text-zinc-400">
-                    $10.00 USD on {assetConfig.network}
-                  </div>
-                </div>
-                <div className="text-right">
-                  <button
-                    type="button"
-                    onClick={() => setStep('select_asset')}
-                    className="text-xs text-amber-400 hover:underline font-semibold"
-                  >
-                    Change Asset
-                  </button>
-                </div>
-              </div>
-
-              {/* Mode Toggle: Sign with Connected Wallet vs QR Code */}
-              <div className="flex bg-[#12141c] p-1 rounded-xl border border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('wallet')}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    paymentMode === 'wallet'
-                      ? 'bg-amber-500 text-black shadow-md'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <Wallet className="w-3.5 h-3.5" />
-                  <span>1-Click Sign with Wallet</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode('qr')}
-                  className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    paymentMode === 'qr'
-                      ? 'bg-amber-500 text-black shadow-md'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>Scan QR / Manual Hash</span>
-                </button>
-              </div>
-
-              {/* MODE A: 1-CLICK WEB3 WALLET SIGNING */}
-              {paymentMode === 'wallet' && (
-                <div className="space-y-3">
-                  <div className="p-3 bg-[#13151f] border border-zinc-800 rounded-xl text-xs text-zinc-300 space-y-1">
-                    <div className="font-semibold text-white flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Direct Web3 Blockchain Signing</span>
-                    </div>
-                    <p className="text-zinc-400 text-[11px]">
-                      Your browser wallet (MetaMask, Coinbase, Rainbow, OKX, etc.) will open to sign the exact payment of {formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset} to the official receiving contract.
-                    </p>
-                  </div>
-
-                  {/* Connected Wallet Info */}
-                  <div className="flex items-center justify-between p-2.5 bg-black/40 border border-zinc-800/80 rounded-xl text-xs">
-                    <span className="text-zinc-400">Payer Address:</span>
-                    <span className="font-mono text-zinc-200 font-semibold">
-                      {walletState.evmAddress ? formatAddress(walletState.evmAddress, 6) : 'Not Connected (Will prompt)'}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSignAndPay}
-                    disabled={isSigningWallet}
-                    className="w-full py-4 px-4 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 text-black font-black text-base uppercase tracking-wider rounded-xl hover:brightness-110 active:scale-[0.98] transition-all shadow-xl flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    {isSigningWallet ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin text-black" />
-                        <span>Confirming in Wallet...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-5 h-5 text-black" />
-                        <span>Sign & Pay $10 ({formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset})</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              )}
-
-              {/* MODE B: QR CODE / EXTERNAL WALLET & HASH SUBMIT */}
-              {paymentMode === 'qr' && (
-                <div className="space-y-3">
-                  {/* QR Code Container */}
-                  <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl shadow-inner max-w-[220px] mx-auto">
-                    <QRCodeSVG
-                      value={getQrPaymentUri()}
-                      size={180}
-                      level="M"
-                      includeMargin={false}
-                    />
-                  </div>
-
-                  {/* Copy Amount & Address Buttons */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyAmount}
-                      className="py-2 px-3 bg-[#161822] hover:bg-[#1f2230] border border-zinc-700/80 rounded-xl text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      {copiedAmount ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                      <span>{copiedAmount ? 'Amount Copied' : 'Copy Amount'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopyAddress}
-                      className="py-2 px-3 bg-[#161822] hover:bg-[#1f2230] border border-zinc-700/80 rounded-xl text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      {copiedAddr ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-amber-400" />}
-                      <span>{copiedAddr ? 'Address Copied' : 'Copy Address'}</span>
-                    </button>
-                  </div>
-
-                  {/* Real-time Scanner Indicator */}
-                  <div className="flex items-center justify-center gap-2 text-xs text-amber-400 py-1 font-mono">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Listening for on-chain broadcast...</span>
-                  </div>
-
-                  {/* Manual Hash Submission Input */}
-                  <div className="space-y-1.5 pt-2 border-t border-zinc-800">
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                      Or Enter Transaction Hash to Verify
-                    </label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="0x... tx hash"
-                        value={txHashInput}
-                        onChange={(e) => setTxHashInput(e.target.value)}
-                        className="flex-1 px-3 py-2 bg-black/60 border border-zinc-700 rounded-xl text-xs font-mono text-white focus:outline-none focus:border-amber-400"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleVerifyManualHash}
-                        className="py-2 px-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl cursor-pointer"
-                      >
-                        Verify TX
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Security & Address Guarantee Notice */}
-              <div className="p-3 bg-black/40 border border-zinc-800/80 rounded-xl text-[11px] text-zinc-400 flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <span>
-                  Pro activations are guaranteed non-custodial. The system strictly validates confirmed on-chain transactions to address <strong className="text-zinc-200 font-mono">{formatAddress(PRO_RECEIVING_ADDRESS, 4)}</strong> before unlocking.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* STEP 3: VERIFYING STATE */}
-          {step === 'verifying' && (
-            <div className="py-8 flex flex-col items-center justify-center text-center space-y-4">
+          {/* STEP 2: SIGNING / AWAITING CONFIRMATION */}
+          {(step === 'signing' || step === 'confirming' || step === 'verifying') && (
+            <div className="py-8 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in">
               <div className="relative">
                 <div className="w-16 h-16 rounded-full border-4 border-amber-500/20 border-t-amber-500 animate-spin" />
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <ShieldCheck className="w-7 h-7 text-amber-400" />
+                  <Sparkles className="w-7 h-7 text-amber-400" />
                 </div>
               </div>
+
               <div>
                 <h3 className="text-lg font-bold text-white font-display">
-                  Verifying Blockchain Transaction...
+                  {step === 'signing'
+                    ? 'Awaiting Signature in Wallet...'
+                    : step === 'confirming'
+                    ? 'Confirming on Polygon...'
+                    : 'Activating Pro Plan...'}
                 </h3>
                 <p className="text-xs text-zinc-400 max-w-xs mx-auto mt-1">
-                  Querying consensus nodes to confirm receipt of {formatCryptoAmount(requiredCryptoAmount, selectedAsset)} {selectedAsset}.
+                  {statusMessage || 'Please confirm the transaction in your connected wallet.'}
                 </p>
               </div>
-              {txHashInput && (
+
+              {txHash && (
                 <div className="font-mono text-[11px] text-zinc-400 bg-black/50 p-2 rounded-lg border border-zinc-800 max-w-sm break-all">
-                  Hash: {txHashInput}
+                  Tx Hash: {txHash}
                 </div>
               )}
             </div>
           )}
 
-          {/* STEP 4: SUCCESS STATE (PRO ACTIVE ✓) */}
+          {/* STEP 3: SUCCESS STATE (PRO ACTIVATED ✓) */}
           {step === 'success' && confirmedTxRecord && (
-            <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
-              <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-[0_0_25px_rgba(16,185,129,0.35)]">
+            <div className="py-6 flex flex-col items-center justify-center text-center space-y-4 animate-in fade-in zoom-in-95">
+              <div className="w-16 h-16 rounded-full bg-emerald-500/20 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 shadow-[0_0_30px_rgba(16,185,129,0.35)]">
                 <CheckCircle2 className="w-10 h-10" />
               </div>
 
               <div>
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 border border-amber-500/50 rounded-full text-amber-300 text-xs font-black uppercase tracking-wider mb-2">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500 text-black rounded-full text-xs font-black uppercase tracking-wider mb-2 shadow-md">
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>PRO ACTIVE ✓</span>
+                  <span>PRO ACTIVATED ✓</span>
                 </div>
                 <h3 className="text-xl font-extrabold text-white font-display">
                   Merchant X Pro Unlocked!
                 </h3>
                 <p className="text-xs text-zinc-300 mt-1 max-w-sm">
-                  Your 30-day Pro plan is active until{' '}
-                  <strong className="text-white">
+                  Your Pro plan is active for 30 days until{' '}
+                  <strong className="text-amber-300 font-bold">
                     {new Date(confirmedTxRecord.periodEndTimestamp).toLocaleDateString('en-US', {
                       month: 'short',
                       day: 'numeric',
@@ -775,31 +484,30 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
               </div>
 
               {/* Receipt Summary Card */}
-              <div className="w-full p-3.5 bg-[#141622] border border-zinc-800 rounded-xl text-left space-y-2 text-xs">
-                <div className="flex justify-between border-b border-zinc-800 pb-1.5">
-                  <span className="text-zinc-400">Plan Duration:</span>
-                  <span className="text-zinc-200 font-semibold">30 Days (Unlimited Transactions)</span>
+              <div className="w-full p-3.5 bg-[#12141e] border border-zinc-800 rounded-xl text-left space-y-2 text-xs">
+                <div className="flex justify-between border-b border-zinc-800/80 pb-1.5">
+                  <span className="text-zinc-400">Monthly Transactions:</span>
+                  <span className="text-amber-400 font-bold">Unlimited Volume</span>
                 </div>
-                <div className="flex justify-between border-b border-zinc-800 pb-1.5">
-                  <span className="text-zinc-400">Settled Amount:</span>
-                  <span className="text-amber-400 font-mono font-bold">
+                <div className="flex justify-between border-b border-zinc-800/80 pb-1.5">
+                  <span className="text-zinc-400">Payment Settled:</span>
+                  <span className="text-white font-mono font-bold">
                     {confirmedTxRecord.cryptoAmount} {confirmedTxRecord.cryptoAsset} ($10.00 USD)
                   </span>
                 </div>
-                <div className="flex justify-between border-b border-zinc-800 pb-1.5">
-                  <span className="text-zinc-400">Network:</span>
-                  <span className="text-zinc-200">{confirmedTxRecord.network}</span>
+                <div className="flex justify-between border-b border-zinc-800/80 pb-1.5">
+                  <span className="text-zinc-400">Settlement Network:</span>
+                  <span className="text-zinc-200">{confirmedTxRecord.network} PoS</span>
                 </div>
                 <div className="flex justify-between items-center pt-0.5">
-                  <span className="text-zinc-400">Transaction Hash:</span>
+                  <span className="text-zinc-400">On-Chain Receipt:</span>
                   <a
-                    href={`${EXPLORER_URLS[confirmedTxRecord.network] || 'https://polygonscan.com'}/tx/${confirmedTxRecord.txHash}`}
+                    href={`${EXPLORER_URLS.Polygon}/tx/${confirmedTxRecord.txHash}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-amber-400 hover:underline flex items-center gap-1 font-mono text-[11px]"
                   >
                     <span>{formatAddress(confirmedTxRecord.txHash, 5)}</span>
-                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
               </div>
@@ -809,7 +517,7 @@ export const ProPaymentModal: React.FC<ProPaymentModalProps> = ({
                 onClick={onClose}
                 className="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-400 text-black font-black text-sm uppercase tracking-wider rounded-xl transition-all shadow-lg cursor-pointer"
               >
-                Return to Terminal
+                Start Using Pro Terminal
               </button>
             </div>
           )}

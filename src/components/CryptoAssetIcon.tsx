@@ -131,6 +131,22 @@ export const CryptoAssetIcon: React.FC<CryptoAssetIconProps> = ({
         </svg>
       );
 
+    case 'USDC':
+      return (
+        <svg
+          viewBox="0 0 32 32"
+          className={`${dim} ${className} shrink-0`}
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle cx="16" cy="16" r="16" fill="#2775CA" />
+          <path
+            d="M16 6C10.477 6 6 10.477 6 16s4.477 10 10 10 10-4.477 10-10S21.523 6 16 6zm.8 16.8v1.6h-1.6v-1.6c-2.4-.2-3.8-1.5-3.9-3.2h2.2c.1 1 1 1.6 2.5 1.6 1.4 0 2.2-.6 2.2-1.5 0-.9-.7-1.3-2.4-1.7-2.7-.6-4.1-1.6-4.1-3.5 0-1.8 1.4-3.1 3.5-3.3V9.1h1.6v1.6c2.1.2 3.4 1.4 3.6 2.9h-2.2c-.1-.8-.8-1.3-2.2-1.3-1.3 0-2 .6-2 1.4 0 .8.6 1.2 2.3 1.6 2.8.6 4.2 1.6 4.2 3.6 0 1.9-1.4 3.2-3.8 3.5z"
+            fill="#FFFFFF"
+          />
+        </svg>
+      );
+
     case 'POL':
       return (
         <svg
