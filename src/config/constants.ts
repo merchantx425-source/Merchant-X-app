@@ -128,25 +128,26 @@ export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
 // Public reliable high-availability RPC Endpoints (CORS-enabled for web apps)
 export const RPC_URLS = {
   POLYGON: [
-    'https://polygon-rpc.com',
-    'https://rpc.ankr.com/polygon',
+    'https://polygon-bor-rpc.publicnode.com',
     'https://polygon.drpc.org',
     'https://1rpc.io/matic',
-    'https://polygon-bor-rpc.publicnode.com',
+    'https://polygon-rpc.com',
+    'https://rpc.ankr.com/polygon',
     'https://polygon.llamarpc.com',
   ],
   ETHEREUM: [
-    'https://cloudflare-eth.com',
+    'https://ethereum-rpc.publicnode.com',
     'https://eth.drpc.org',
-    'https://rpc.flashbots.net',
     'https://1rpc.io/eth',
     'https://rpc.ankr.com/eth',
-    'https://ethereum-rpc.publicnode.com',
+    'https://rpc.flashbots.net',
+    'https://cloudflare-eth.com',
   ],
   BITCOIN_APIS: [
     'https://mempool.space/api',
     'https://blockstream.info/api',
     'https://blockchain.info',
+    'https://api.blockcypher.com/v1/btc/main',
   ],
 };
 

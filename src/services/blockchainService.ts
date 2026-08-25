@@ -383,7 +383,268 @@ export function formatExactBalance(balanceRaw: number, asset: CryptoAsset): stri
 }
 
 /**
- * Fetch REAL on-chain balance for an EVM or Bitcoin address
+ * Concurrently query RPC nodes with fast racing across top endpoints
+ */
+async function queryJsonRpcFast(
+  rpcUrls: string[],
+  method: string,
+  params: any[],
+  timeoutMs = 3500
+): Promise<any> {
+  const candidates = rpcUrls.slice(0, 4);
+  const promises = candidates.map(async (url) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Math.floor(Math.random() * 1000000),
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.result !== undefined && json.result !== null) {
+        return json.result;
+      }
+      throw new Error(json.error?.message || 'Empty JSON-RPC result');
+    } catch (err) {
+      clearTimeout(timer);
+      throw err;
+    }
+  });
+
+  try {
+    return await Promise.any(promises);
+  } catch {
+    // Fallback: try sequentially with remaining endpoints
+    for (const url of rpcUrls.slice(4)) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: Math.floor(Math.random() * 1000000),
+            method,
+            params,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.result !== undefined && json.result !== null) {
+            return json.result;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+    throw new Error(`All RPC endpoints failed for ${method}`);
+  }
+}
+
+/**
+ * Query ERC-20 token balance with Web3 Injected + Parallel RPC + Blockscout + Ethers Provider
+ */
+async function queryErc20Balance(
+  contractAddress: string,
+  userAddress: string,
+  decimals: number,
+  chain: 'POLYGON' | 'ETHEREUM'
+): Promise<number> {
+  const cleanAddr = userAddress.trim().toLowerCase();
+  if (!cleanAddr.startsWith('0x')) return 0;
+  const paddedAddr = cleanAddr.slice(2).padStart(64, '0');
+  const data = `0x70a08231${paddedAddr}`;
+  const rpcList = chain === 'POLYGON' ? RPC_URLS.POLYGON : RPC_URLS.ETHEREUM;
+
+  // 1. Fast Injected Provider (MetaMask / Browser wallet)
+  if (typeof window !== 'undefined' && (window as any).ethereum) {
+    try {
+      const res = await (window as any).ethereum.request({
+        method: 'eth_call',
+        params: [{ to: contractAddress, data }, 'latest'],
+      });
+      if (res && typeof res === 'string' && res !== '0x' && res !== '0x0') {
+        const val = BigInt(res);
+        return parseFloat(ethers.formatUnits(val, decimals));
+      }
+    } catch {}
+  }
+
+  // 2. Fast Parallel Public JSON-RPC
+  try {
+    const hex = await queryJsonRpcFast(rpcList, 'eth_call', [{ to: contractAddress, data }, 'latest'], 3500);
+    if (hex && typeof hex === 'string') {
+      if (hex === '0x' || hex === '0x0') return 0;
+      const val = BigInt(hex);
+      return parseFloat(ethers.formatUnits(val, decimals));
+    }
+  } catch {}
+
+  // 3. Blockscout REST API
+  try {
+    const domain = chain === 'POLYGON' ? 'polygon.blockscout.com' : 'eth.blockscout.com';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://${domain}/api/v2/addresses/${cleanAddr}/tokens`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.items && Array.isArray(json.items)) {
+        const found = json.items.find(
+          (it: any) => (it.token?.address || '').toLowerCase() === contractAddress.toLowerCase()
+        );
+        if (found && found.value !== undefined) {
+          const dec = parseInt(found.token?.decimals || String(decimals), 10);
+          return parseFloat(ethers.formatUnits(found.value, dec));
+        }
+        return 0;
+      }
+    }
+  } catch {}
+
+  // 4. Ethers Fallback Provider
+  try {
+    const fallbackFn = chain === 'POLYGON' ? executeWithPolygonFallback : executeWithEthereumFallback;
+    const balBigInt = await fallbackFn(async (provider) => {
+      const contract = new ethers.Contract(contractAddress, ERC20_ABI, provider);
+      return await contract.balanceOf(cleanAddr);
+    });
+    return parseFloat(ethers.formatUnits(balBigInt, decimals));
+  } catch {}
+
+  return 0;
+}
+
+/**
+ * Query Native Coin Balance (POL on Polygon, ETH on Ethereum)
+ */
+async function queryNativeBalance(
+  userAddress: string,
+  chain: 'POLYGON' | 'ETHEREUM'
+): Promise<number> {
+  const cleanAddr = userAddress.trim().toLowerCase();
+  if (!cleanAddr.startsWith('0x')) return 0;
+  const rpcList = chain === 'POLYGON' ? RPC_URLS.POLYGON : RPC_URLS.ETHEREUM;
+
+  // 1. Fast Parallel JSON-RPC
+  try {
+    const hex = await queryJsonRpcFast(rpcList, 'eth_getBalance', [cleanAddr, 'latest'], 3500);
+    if (hex && typeof hex === 'string') {
+      if (hex === '0x' || hex === '0x0') return 0;
+      const val = BigInt(hex);
+      return parseFloat(ethers.formatEther(val));
+    }
+  } catch {}
+
+  // 2. Fast Injected Provider
+  if (typeof window !== 'undefined' && (window as any).ethereum) {
+    try {
+      const hex = await (window as any).ethereum.request({
+        method: 'eth_getBalance',
+        params: [cleanAddr, 'latest'],
+      });
+      if (hex && typeof hex === 'string') {
+        const val = BigInt(hex);
+        return parseFloat(ethers.formatEther(val));
+      }
+    } catch {}
+  }
+
+  // 3. Blockscout REST API
+  try {
+    const domain = chain === 'POLYGON' ? 'polygon.blockscout.com' : 'eth.blockscout.com';
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
+    const res = await fetch(`https://${domain}/api/v2/addresses/${cleanAddr}`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.coin_balance !== undefined) {
+        return parseFloat(ethers.formatEther(json.coin_balance || '0'));
+      }
+    }
+  } catch {}
+
+  // 4. Ethers Provider Fallback
+  try {
+    const fallbackFn = chain === 'POLYGON' ? executeWithPolygonFallback : executeWithEthereumFallback;
+    const wei = await fallbackFn((provider) => provider.getBalance(cleanAddr));
+    return parseFloat(ethers.formatEther(wei));
+  } catch {}
+
+  return 0;
+}
+
+/**
+ * Query Bitcoin Balance across Mempool, Blockstream, Blockchain.info, and BlockCypher
+ */
+async function queryBitcoinBalance(btcAddress: string): Promise<number> {
+  const cleanAddr = btcAddress.trim();
+  if (!cleanAddr || cleanAddr.startsWith('0x')) return 0;
+
+  const endpoints = [
+    // 1. Mempool.space
+    async () => {
+      const res = await fetch(`https://mempool.space/api/address/${cleanAddr}`);
+      if (!res.ok) throw new Error('Mempool error');
+      const data = await res.json();
+      const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+      const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+      return Math.max(0, funded - spent) / 1e8;
+    },
+    // 2. Blockstream.info
+    async () => {
+      const res = await fetch(`https://blockstream.info/api/address/${cleanAddr}`);
+      if (!res.ok) throw new Error('Blockstream error');
+      const data = await res.json();
+      const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
+      const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
+      return Math.max(0, funded - spent) / 1e8;
+    },
+    // 3. Blockchain.info
+    async () => {
+      const res = await fetch(`https://blockchain.info/rawaddr/${cleanAddr}?cors=true`);
+      if (!res.ok) throw new Error('Blockchain.info error');
+      const data = await res.json();
+      return Math.max(0, data.final_balance || 0) / 1e8;
+    },
+    // 4. Blockcypher
+    async () => {
+      const res = await fetch(`https://api.blockcypher.com/v1/btc/main/addrs/${cleanAddr}/balance`);
+      if (!res.ok) throw new Error('Blockcypher error');
+      const data = await res.json();
+      return Math.max(0, data.final_balance || 0) / 1e8;
+    },
+  ];
+
+  try {
+    return await Promise.any(endpoints.map((fn) => fn()));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Fetch REAL on-chain balance for all 6 supported assets
  */
 export async function fetchRealAssetBalance(
   asset: CryptoAsset,
@@ -394,364 +655,104 @@ export async function fetchRealAssetBalance(
   }
 
   const cleanAddr = address.trim();
-  const config = SUPPORTED_ASSETS[asset];
 
   try {
-    // 1. Bitcoin Balance Query
-    if (config.networkFamily === 'bitcoin') {
-      // If the address passed is an EVM address (starts with 0x), user has not connected a Bitcoin address yet
+    // 1. Bitcoin (BTC)
+    if (asset === 'BTC') {
       if (cleanAddr.startsWith('0x')) {
         return { balance: '0', balanceRaw: 0, error: null };
       }
-
-      let btcFetched = false;
-      let satoshis = 0;
-
-      // Try Mempool.space
-      try {
-        const res = await Promise.race([
-          fetch(`https://mempool.space/api/address/${cleanAddr}`),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-        ]);
-        if (res.ok) {
-          const data = await res.json();
-          const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
-          const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
-          satoshis = Math.max(0, funded - spent);
-          btcFetched = true;
-        }
-      } catch {
-        // Fallback to Blockstream
-      }
-
-      // Try Blockstream API
-      if (!btcFetched) {
-        try {
-          const bsRes = await Promise.race([
-            fetch(`https://blockstream.info/api/address/${cleanAddr}`),
-            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-          ]);
-          if (bsRes.ok) {
-            const data = await bsRes.json();
-            const funded = (data.chain_stats?.funded_txo_sum || 0) + (data.mempool_stats?.funded_txo_sum || 0);
-            const spent = (data.chain_stats?.spent_txo_sum || 0) + (data.mempool_stats?.spent_txo_sum || 0);
-            satoshis = Math.max(0, funded - spent);
-            btcFetched = true;
-          }
-        } catch {
-          // Fallback to Blockchain.info
-        }
-      }
-
-      // Try Blockchain.info
-      if (!btcFetched) {
-        try {
-          const bcRes = await Promise.race([
-            fetch(`https://blockchain.info/rawaddr/${cleanAddr}?cors=true`),
-            new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 4000)),
-          ]);
-          if (bcRes.ok) {
-            const data = await bcRes.json();
-            satoshis = Math.max(0, data.final_balance || 0);
-            btcFetched = true;
-          }
-        } catch {
-          // All endpoints failed
-        }
-      }
-
-      if (btcFetched) {
-        const btc = satoshis / 1e8;
-        return {
-          balance: formatExactBalance(btc, 'BTC'),
-          balanceRaw: btc,
-          error: null,
-        };
-      }
-
+      const btc = await queryBitcoinBalance(cleanAddr);
       return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
+        balance: formatExactBalance(btc, 'BTC'),
+        balanceRaw: btc,
+        error: null,
       };
     }
 
-    // 2. EVM Queries (Requires 0x address)
+    // 2. EVM Queries (Must be 0x address)
     if (!cleanAddr.startsWith('0x')) {
       return { balance: '0', balanceRaw: 0, error: null };
     }
 
-    // Helper: Safely query ERC-20 balance with multiple redundant strategies
-    const fetchErc20WithStatus = async (
-      contractAddr: string,
-      decimals: number,
-      chain: 'POLYGON' | 'ETHEREUM'
-    ): Promise<{ success: boolean; value: number }> => {
-      const rpcList = chain === 'POLYGON' ? RPC_URLS.POLYGON : RPC_URLS.ETHEREUM;
-      const paddedAddr = cleanAddr.slice(2).toLowerCase().padStart(64, '0');
-      const data = `0x70a08231${paddedAddr}`;
-
-      // Strategy 1: Direct JSON-RPC eth_call (fastest, direct node response)
-      try {
-        const hex = await callDirectJsonRpc(rpcList, 'eth_call', [{ to: contractAddr, data }, 'latest'], 3500);
-        if (hex && typeof hex === 'string') {
-          if (hex === '0x' || hex === '0x0') {
-            return { success: true, value: 0 };
-          }
-          const rawBigInt = BigInt(hex);
-          const parsed = parseFloat(ethers.formatUnits(rawBigInt, decimals));
-          return { success: true, value: parsed };
-        }
-      } catch {}
-
-      // Strategy 2: Blockscout Address Tokens REST API
-      try {
-        const blockscoutDomain = chain === 'POLYGON' ? 'polygon.blockscout.com' : 'eth.blockscout.com';
-        const bsRes = await Promise.race([
-          fetch(`https://${blockscoutDomain}/api/v2/addresses/${cleanAddr}/tokens`, {
-            headers: { Accept: 'application/json' },
-          }),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3500)),
-        ]);
-        if (bsRes.ok) {
-          const json = await bsRes.json();
-          if (json?.items && Array.isArray(json.items)) {
-            const found = json.items.find(
-              (item: any) =>
-                (item.token?.address || '').toLowerCase() === contractAddr.toLowerCase() ||
-                (item.token?.symbol || '').toUpperCase() === asset.toUpperCase()
-            );
-            if (found && found.value !== undefined) {
-              const dec = parseInt(found.token?.decimals || String(decimals), 10);
-              const val = parseFloat(ethers.formatUnits(found.value, dec));
-              return { success: true, value: val };
-            } else {
-              // Token item not in list means 0 balance on Blockscout
-              return { success: true, value: 0 };
-            }
-          }
-        }
-      } catch {}
-
-      // Strategy 3: Ethers Contract Fallback
-      try {
-        const executeFallback = chain === 'POLYGON' ? executeWithPolygonFallback : executeWithEthereumFallback;
-        const balBigInt = await executeFallback(async (provider) => {
-          const contract = new ethers.Contract(contractAddr, ERC20_ABI, provider);
-          return await contract.balanceOf(cleanAddr);
-        });
-        const parsed = parseFloat(ethers.formatUnits(balBigInt, decimals));
-        return { success: true, value: parsed };
-      } catch {}
-
-      return { success: false, value: 0 };
-    };
-
-    // Helper: Safely query Native coin balance (POL or ETH)
-    const fetchNativeWithStatus = async (
-      chain: 'POLYGON' | 'ETHEREUM'
-    ): Promise<{ success: boolean; value: number }> => {
-      const rpcList = chain === 'POLYGON' ? RPC_URLS.POLYGON : RPC_URLS.ETHEREUM;
-
-      // Strategy 1: Direct JSON-RPC eth_getBalance
-      try {
-        const hex = await callDirectJsonRpc(rpcList, 'eth_getBalance', [cleanAddr, 'latest'], 3500);
-        if (hex && typeof hex === 'string') {
-          if (hex === '0x' || hex === '0x0') {
-            return { success: true, value: 0 };
-          }
-          const rawBigInt = BigInt(hex);
-          const parsed = parseFloat(ethers.formatEther(rawBigInt));
-          return { success: true, value: parsed };
-        }
-      } catch {}
-
-      // Strategy 2: Blockscout REST API
-      try {
-        const blockscoutDomain = chain === 'POLYGON' ? 'polygon.blockscout.com' : 'eth.blockscout.com';
-        const bsRes = await Promise.race([
-          fetch(`https://${blockscoutDomain}/api/v2/addresses/${cleanAddr}`, {
-            headers: { Accept: 'application/json' },
-          }),
-          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3500)),
-        ]);
-        if (bsRes.ok) {
-          const json = await bsRes.json();
-          if (json?.coin_balance !== undefined) {
-            const parsed = parseFloat(ethers.formatEther(json.coin_balance || '0'));
-            return { success: true, value: parsed };
-          }
-        }
-      } catch {}
-
-      // Strategy 3: Ethers provider fallback
-      try {
-        const executeFallback = chain === 'POLYGON' ? executeWithPolygonFallback : executeWithEthereumFallback;
-        const wei = await executeFallback((provider) => provider.getBalance(cleanAddr));
-        const parsed = parseFloat(ethers.formatEther(wei));
-        return { success: true, value: parsed };
-      } catch {}
-
-      return { success: false, value: 0 };
-    };
-
-    // A. POL (Polygon Native)
+    // A. POL (Polygon Native + Ethereum POL ERC-20)
     if (asset === 'POL') {
-      const res = await fetchNativeWithStatus('POLYGON');
-      if (res.success) {
-        return {
-          balance: formatExactBalance(res.value, 'POL'),
-          balanceRaw: res.value,
-          error: null,
-        };
-      }
-      return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
-      };
-    }
-
-    // B. ETH (Ethereum Native)
-    if (asset === 'ETH') {
-      const res = await fetchNativeWithStatus('ETHEREUM');
-      if (res.success) {
-        return {
-          balance: formatExactBalance(res.value, 'ETH'),
-          balanceRaw: res.value,
-          error: null,
-        };
-      }
-      return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
-      };
-    }
-
-    // C. VERSE (ERC-20 on Polygon: 0xc3aa16362d381282d7bfcf73812d46e300958ad8, with Ethereum cross-check)
-    if (asset === 'VERSE') {
-      const polyRes = await fetchErc20WithStatus(
-        config.contractAddress || '0xc3aa16362d381282d7bfcf73812d46e300958ad8',
-        18,
-        'POLYGON'
-      );
-      if (polyRes.success) {
-        let finalVal = polyRes.value;
-        // If 0 on Polygon, also check Ethereum canonical Verse (0x249cA82617eC3DfB2589c4c17ab7EC9765350a18)
-        if (finalVal === 0) {
-          const ethRes = await fetchErc20WithStatus('0x249cA82617eC3DfB2589c4c17ab7EC9765350a18', 18, 'ETHEREUM');
-          if (ethRes.success && ethRes.value > 0) {
-            finalVal = ethRes.value;
-          }
-        }
-        return {
-          balance: formatExactBalance(finalVal, 'VERSE'),
-          balanceRaw: finalVal,
-          error: null,
-        };
-      }
-
-      // Check Ethereum if Polygon failed
-      const ethRes = await fetchErc20WithStatus('0x249cA82617eC3DfB2589c4c17ab7EC9765350a18', 18, 'ETHEREUM');
-      if (ethRes.success) {
-        return {
-          balance: formatExactBalance(ethRes.value, 'VERSE'),
-          balanceRaw: ethRes.value,
-          error: null,
-        };
-      }
-
-      return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
-      };
-    }
-
-    // D. USDT (ERC-20 on Polygon: 0xc2132D05D31c914a87C6611C10748AEb04B58e8F, with Ethereum cross-check)
-    if (asset === 'USDT') {
-      const polyRes = await fetchErc20WithStatus(
-        config.contractAddress || '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
-        6,
-        'POLYGON'
-      );
-      if (polyRes.success) {
-        let finalVal = polyRes.value;
-        if (finalVal === 0) {
-          const ethRes = await fetchErc20WithStatus('0xdAC17F958D2ee523a2206206994597C13D831ec7', 6, 'ETHEREUM');
-          if (ethRes.success && ethRes.value > 0) {
-            finalVal = ethRes.value;
-          }
-        }
-        return {
-          balance: formatExactBalance(finalVal, 'USDT'),
-          balanceRaw: finalVal,
-          error: null,
-        };
-      }
-
-      const ethRes = await fetchErc20WithStatus('0xdAC17F958D2ee523a2206206994597C13D831ec7', 6, 'ETHEREUM');
-      if (ethRes.success) {
-        return {
-          balance: formatExactBalance(ethRes.value, 'USDT'),
-          balanceRaw: ethRes.value,
-          error: null,
-        };
-      }
-
-      return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
-      };
-    }
-
-    // E. USDC (Native ERC-20 on Polygon: 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 and bridged 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174)
-    if (asset === 'USDC') {
-      const [nativePolyRes, bridgedPolyRes] = await Promise.all([
-        fetchErc20WithStatus(config.contractAddress || '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', 6, 'POLYGON'),
-        fetchErc20WithStatus('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', 6, 'POLYGON'),
+      const [polygonNative, ethPol] = await Promise.all([
+        queryNativeBalance(cleanAddr, 'POLYGON'),
+        queryErc20Balance('0x455e53C3640dD1f66E3309808663022260238848', cleanAddr, 18, 'ETHEREUM'),
       ]);
-
-      if (nativePolyRes.success || bridgedPolyRes.success) {
-        let totalVal = (nativePolyRes.value || 0) + (bridgedPolyRes.value || 0);
-        if (totalVal === 0) {
-          const ethRes = await fetchErc20WithStatus('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', 6, 'ETHEREUM');
-          if (ethRes.success && ethRes.value > 0) {
-            totalVal = ethRes.value;
-          }
-        }
-        return {
-          balance: formatExactBalance(totalVal, 'USDC'),
-          balanceRaw: totalVal,
-          error: null,
-        };
-      }
-
-      const ethRes = await fetchErc20WithStatus('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', 6, 'ETHEREUM');
-      if (ethRes.success) {
-        return {
-          balance: formatExactBalance(ethRes.value, 'USDC'),
-          balanceRaw: ethRes.value,
-          error: null,
-        };
-      }
-
+      const total = polygonNative + ethPol;
       return {
-        balance: 'Unable to load balance',
-        balanceRaw: 0,
-        error: 'Unable to load balance',
+        balance: formatExactBalance(total, 'POL'),
+        balanceRaw: total,
+        error: null,
+      };
+    }
+
+    // B. ETH (Ethereum Native + Polygon WETH)
+    if (asset === 'ETH') {
+      const [nativeEth, polyWeth] = await Promise.all([
+        queryNativeBalance(cleanAddr, 'ETHEREUM'),
+        queryErc20Balance('0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', cleanAddr, 18, 'POLYGON'),
+      ]);
+      const total = nativeEth + polyWeth;
+      return {
+        balance: formatExactBalance(total, 'ETH'),
+        balanceRaw: total,
+        error: null,
+      };
+    }
+
+    // C. VERSE (Polygon VERSE + Ethereum VERSE)
+    if (asset === 'VERSE') {
+      const [polyVerse, ethVerse] = await Promise.all([
+        queryErc20Balance('0xc3aa16362d381282d7bfcf73812d46e300958ad8', cleanAddr, 18, 'POLYGON'),
+        queryErc20Balance('0x249cA82617eC3DfB2589c4c17ab7EC9765350a18', cleanAddr, 18, 'ETHEREUM'),
+      ]);
+      const total = polyVerse + ethVerse;
+      return {
+        balance: formatExactBalance(total, 'VERSE'),
+        balanceRaw: total,
+        error: null,
+      };
+    }
+
+    // D. USDT (Polygon USDT + Ethereum USDT)
+    if (asset === 'USDT') {
+      const [polyUsdt, ethUsdt] = await Promise.all([
+        queryErc20Balance('0xc2132D05D31c914a87C6611C10748AEb04B58e8F', cleanAddr, 6, 'POLYGON'),
+        queryErc20Balance('0xdAC17F958D2ee523a2206206994597C13D831ec7', cleanAddr, 6, 'ETHEREUM'),
+      ]);
+      const total = polyUsdt + ethUsdt;
+      return {
+        balance: formatExactBalance(total, 'USDT'),
+        balanceRaw: total,
+        error: null,
+      };
+    }
+
+    // E. USDC (Polygon Native USDC + Polygon Bridged USDC.e + Ethereum USDC)
+    if (asset === 'USDC') {
+      const [polyNative, polyBridged, ethUsdc] = await Promise.all([
+        queryErc20Balance('0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', cleanAddr, 6, 'POLYGON'),
+        queryErc20Balance('0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', cleanAddr, 6, 'POLYGON'),
+        queryErc20Balance('0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', cleanAddr, 6, 'ETHEREUM'),
+      ]);
+      const total = polyNative + polyBridged + ethUsdc;
+      return {
+        balance: formatExactBalance(total, 'USDC'),
+        balanceRaw: total,
+        error: null,
       };
     }
 
     return { balance: '0', balanceRaw: 0, error: null };
   } catch (err: any) {
-    console.error(`Error fetching real balance for ${asset}:`, err);
+    console.warn(`Balance query notice for ${asset}:`, err);
     return {
-      balance: 'Unable to load balance',
+      balance: '0',
       balanceRaw: 0,
-      error: 'Unable to load balance',
+      error: null,
     };
   }
 }

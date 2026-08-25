@@ -282,6 +282,20 @@ export const POS: React.FC<POSProps> = ({
               </div>
             </>
           )}
+
+          {/* BTC Address Reminder if BTC is selected but no Bitcoin address configured */}
+          {selectedAsset === 'BTC' && !walletState.btcAddress && !settings.customBtcReceivingAddress && (
+            <div className="mt-1 inline-flex items-center justify-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] text-amber-300">
+              <span>No BTC address configured.</span>
+              <button
+                type="button"
+                onClick={onOpenWalletModal}
+                className="font-bold underline text-amber-400 hover:text-amber-300 cursor-pointer"
+              >
+                Link BTC Address
+              </button>
+            </div>
+          )}
         </div>
       </section>
 
