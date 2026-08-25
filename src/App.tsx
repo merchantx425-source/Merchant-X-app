@@ -273,45 +273,76 @@ export default function App() {
     return () => clearInterval(interval);
   }, [refreshRates]);
 
-  // Fetch Real On-Chain Balances for all 5 assets immediately
+  // Fetch Real On-Chain Balances for all 6 assets immediately
   const refreshBalances = useCallback(async () => {
     setIsRefreshingBalances(true);
+
+    // Set loading state for all assets
+    setBalances((prev) => {
+      const next = { ...prev };
+      ASSET_ORDER.forEach((sym) => {
+        next[sym] = {
+          ...(next[sym] || { symbol: sym, balance: '0', balanceRaw: 0 }),
+          isLoading: true,
+          error: null,
+        };
+      });
+      return next;
+    });
 
     const activeEvm = walletState.evmAddress || settings.customEvmReceivingAddress || null;
     const activeBtc = walletState.btcAddress || settings.customBtcReceivingAddress || null;
 
-    const results = await Promise.all(
-      ASSET_ORDER.map(async (symbol) => {
-        const config = SUPPORTED_ASSETS[symbol];
-        const targetAddress = config.networkFamily === 'bitcoin' ? activeBtc : activeEvm;
+    try {
+      const results = await Promise.all(
+        ASSET_ORDER.map(async (symbol) => {
+          const config = SUPPORTED_ASSETS[symbol];
+          const targetAddress = config.networkFamily === 'bitcoin' ? activeBtc : activeEvm;
 
-        if (targetAddress) {
-          try {
-            const res = await fetchRealAssetBalance(symbol, targetAddress);
-            return { symbol, res };
-          } catch (err: any) {
-            console.warn(`Balance fetch warning for ${symbol}:`, err);
+          if (targetAddress) {
+            try {
+              const res = await fetchRealAssetBalance(symbol, targetAddress);
+              return { symbol, res };
+            } catch (err: any) {
+              console.warn(`Balance fetch warning for ${symbol}:`, err);
+              return {
+                symbol,
+                res: {
+                  balance: 'Unable to load balance',
+                  balanceRaw: 0,
+                  error: 'Unable to load balance',
+                },
+              };
+            }
+          } else {
             return { symbol, res: { balance: '0', balanceRaw: 0, error: null } };
           }
-        } else {
-          return { symbol, res: { balance: '0', balanceRaw: 0, error: null } };
-        }
-      })
-    );
+        })
+      );
 
-    const updatedBalances = { ...balances };
-    results.forEach(({ symbol, res }) => {
-      updatedBalances[symbol] = {
-        symbol,
-        balance: res.balance,
-        balanceRaw: res.balanceRaw,
-        isLoading: false,
-        error: res.error,
+      const updatedBalances: Record<CryptoAsset, AssetBalance> = {
+        VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+        POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+        USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+        USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+        ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+        BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
       };
-    });
 
-    setBalances(updatedBalances);
-    setIsRefreshingBalances(false);
+      results.forEach(({ symbol, res }) => {
+        updatedBalances[symbol] = {
+          symbol,
+          balance: res.balance,
+          balanceRaw: res.balanceRaw,
+          isLoading: false,
+          error: res.error,
+        };
+      });
+
+      setBalances(updatedBalances);
+    } finally {
+      setIsRefreshingBalances(false);
+    }
   }, [
     walletState.evmAddress,
     walletState.btcAddress,
@@ -347,14 +378,20 @@ export default function App() {
     };
   }, []);
 
-  // Update Balances whenever wallets or custom receiving addresses change
+  // Update Balances whenever wallets or custom receiving addresses change, with 30s background sync
   useEffect(() => {
     refreshBalances();
+    const interval = setInterval(() => {
+      if (walletState.isConnected || settings.customEvmReceivingAddress || settings.customBtcReceivingAddress) {
+        refreshBalances();
+      }
+    }, 35000);
+    return () => clearInterval(interval);
   }, [
-    walletState.evmAddress,
-    walletState.btcAddress,
-    settings.customBtcReceivingAddress,
+    refreshBalances,
+    walletState.isConnected,
     settings.customEvmReceivingAddress,
+    settings.customBtcReceivingAddress,
   ]);
 
   // Save Settings Changes
@@ -389,6 +426,9 @@ export default function App() {
     } catch {
       // Ignore
     }
+    setTimeout(() => {
+      refreshBalances();
+    }, 100);
   };
 
   // Disconnect Wallet Action
@@ -402,6 +442,14 @@ export default function App() {
       walletProvider: null,
     };
     setWalletState(emptyState);
+    setBalances({
+      VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+    });
     try {
       localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(emptyState));
     } catch {
@@ -636,6 +684,9 @@ export default function App() {
         walletState={walletState}
         onConnectWallet={handleConnectWallet}
         onDisconnectWallet={handleDisconnectWallet}
+        balances={balances}
+        onRefreshBalances={refreshBalances}
+        isRefreshingBalances={isRefreshingBalances}
       />
 
       {/* 6. Charge Flow & Blockchain Verification Modal */}

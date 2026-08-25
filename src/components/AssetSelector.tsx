@@ -40,8 +40,8 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
         </button>
       </div>
 
-      {/* 5 Asset Cards in responsive grid */}
-      <div className="grid grid-cols-5 gap-1 sm:gap-1.5">
+      {/* 6 Supported Asset Cards in responsive grid */}
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 sm:gap-1.5">
         {ASSET_ORDER.map((symbol) => {
           const config = SUPPORTED_ASSETS[symbol];
           const isSelected = selectedAsset === symbol;
@@ -80,13 +80,23 @@ export const AssetSelector: React.FC<AssetSelectorProps> = ({
               {/* Bottom Real Balance Display */}
               <div className="w-full mt-0.5 pt-0.5 border-t border-zinc-800/50">
                 {balanceData?.isLoading ? (
-                  <div className="h-2.5 w-6 bg-zinc-800 animate-pulse rounded mx-auto" />
+                  <div className="h-2.5 w-8 bg-zinc-800 animate-pulse rounded mx-auto" />
+                ) : balanceData?.error ? (
+                  <div className="flex flex-col items-center justify-center">
+                    <span
+                      className="text-[8px] sm:text-[9px] font-medium text-red-400/90 truncate max-w-full px-0.5"
+                      title={balanceData.error}
+                    >
+                      Unable to load
+                    </span>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center">
                     <span
-                      className={`text-[9px] sm:text-[10px] font-mono font-bold tracking-tight truncate max-w-full ${
+                      className={`text-[9px] sm:text-[10px] font-mono font-bold tracking-tight truncate max-w-full px-0.5 ${
                         isSelected ? 'text-zinc-100' : 'text-zinc-400'
                       }`}
+                      title={`${balanceData?.balance ?? '0'} ${symbol}`}
                     >
                       {balanceData?.balance ?? '0'}
                     </span>

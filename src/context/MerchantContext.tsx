@@ -223,12 +223,19 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setBalances((prev) => {
       const next = { ...prev };
       ASSET_ORDER.forEach((asset) => {
-        next[asset] = { ...next[asset], isLoading: true, error: null };
+        next[asset] = { ...(next[asset] || { symbol: asset, balance: '0', balanceRaw: 0 }), isLoading: true, error: null };
       });
       return next;
     });
 
-    const updatedBalances: Record<CryptoAsset, AssetBalance> = { ...balances };
+    const updatedBalances: Record<CryptoAsset, AssetBalance> = {
+      VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+    };
 
     await Promise.all(
       ASSET_ORDER.map(async (asset) => {
@@ -246,14 +253,24 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           return;
         }
 
-        const res = await fetchRealAssetBalance(asset, targetAddress);
-        updatedBalances[asset] = {
-          symbol: asset,
-          balance: res.balance,
-          balanceRaw: res.balanceRaw,
-          isLoading: false,
-          error: res.error,
-        };
+        try {
+          const res = await fetchRealAssetBalance(asset, targetAddress);
+          updatedBalances[asset] = {
+            symbol: asset,
+            balance: res.balance,
+            balanceRaw: res.balanceRaw,
+            isLoading: false,
+            error: res.error,
+          };
+        } catch {
+          updatedBalances[asset] = {
+            symbol: asset,
+            balance: 'Unable to load balance',
+            balanceRaw: 0,
+            isLoading: false,
+            error: 'Unable to load balance',
+          };
+        }
       })
     );
 
@@ -262,7 +279,7 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   useEffect(() => {
     refreshBalances();
-  }, [wallet.evmAddress, wallet.btcAddress, settings.customEvmReceivingAddress, settings.customBtcReceivingAddress]);
+  }, [refreshBalances]);
 
   // Connect EVM Wallet
   const connectEvmWallet = useCallback(async (providerType: string = 'Injected') => {
@@ -351,6 +368,14 @@ export const MerchantProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       evmChainId: null,
       isConnected: false,
       walletProvider: null,
+    });
+    setBalances({
+      VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDT: { symbol: 'USDT', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      USDC: { symbol: 'USDC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      ETH: { symbol: 'ETH', balance: '0', balanceRaw: 0, isLoading: false, error: null },
+      BTC: { symbol: 'BTC', balance: '0', balanceRaw: 0, isLoading: false, error: null },
     });
   }, []);
 
