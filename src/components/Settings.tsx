@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings, WalletState, FiatCurrency, AppTheme } from '../types/merchant';
+import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState } from '../types/merchant';
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
 import { isBiometricAvailable, registerBiometricPasskey } from '../services/biometricService';
@@ -20,6 +20,7 @@ import {
   FileText,
   ChevronRight,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 
 interface SettingsProps {
@@ -30,6 +31,9 @@ interface SettingsProps {
   onDisconnectWallet: () => void;
   onOpenHistory: () => void;
   onExportTransactions: () => void;
+  onOpenSubscription?: () => void;
+  subscriptionState?: SubscriptionState;
+  isPro?: boolean;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
@@ -40,6 +44,9 @@ export const Settings: React.FC<SettingsProps> = ({
   onDisconnectWallet,
   onOpenHistory,
   onExportTransactions,
+  onOpenSubscription,
+  subscriptionState,
+  isPro = false,
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -167,7 +174,57 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 2. TRANSACTIONS */}
+      {/* 2. SUBSCRIPTION PLAN */}
+      {onOpenSubscription && (
+        <div className="space-y-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center justify-between">
+            <span>Subscription Plan</span>
+            {isPro ? (
+              <span className="text-[10px] text-amber-400 font-bold uppercase">Pro Tier Active</span>
+            ) : (
+              <span className="text-[10px] text-zinc-400 font-bold uppercase">Free Tier</span>
+            )}
+          </h2>
+          <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-800/60">
+            <button
+              type="button"
+              onClick={onOpenSubscription}
+              className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-white flex items-center gap-2">
+                    <span>{isPro ? 'Merchant X Pro Plan' : 'Merchant X Free Plan'}</span>
+                    {isPro && (
+                      <span className="px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-black uppercase rounded">
+                        PRO ✓
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    {isPro
+                      ? `Unlimited volume • Expires ${
+                          subscriptionState?.proExpiresAt
+                            ? new Date(subscriptionState.proExpiresAt).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                              })
+                            : 'in 30 days'
+                        }`
+                      : '10 tx/mo limit • Upgrade to Pro for $10/month'}
+                  </div>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-zinc-500" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 3. TRANSACTIONS */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           Transactions
@@ -196,8 +253,8 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center gap-3">
               <FileSpreadsheet className="w-5 h-5 text-amber-400" />
               <div>
-                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'exportTx')}</div>
-                <div className="text-xs text-zinc-400">{getTranslation(lang, 'exportTxSub')}</div>
+                <div className="text-sm font-semibold text-white">Export Statement (PDF / CSV)</div>
+                <div className="text-xs text-zinc-400">Download formatted accounting statements & reports</div>
               </div>
             </div>
             <ChevronRight className="w-4 h-4 text-zinc-500" />

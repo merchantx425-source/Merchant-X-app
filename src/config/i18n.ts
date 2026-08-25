@@ -4,6 +4,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   en: {
     pos: 'POS',
     history: 'History',
+    plan: 'Plan',
     settings: 'Settings',
     enterAmount: 'Enter Amount',
     charge: 'CHARGE',
@@ -64,6 +65,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   fr: {
     pos: 'TPV',
     history: 'Historique',
+    plan: 'Abonnement',
     settings: 'Paramètres',
     enterAmount: 'Entrer le montant',
     charge: 'ENCAISSER',
@@ -124,6 +126,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   es: {
     pos: 'TPV',
     history: 'Historial',
+    plan: 'Plan',
     settings: 'Ajustes',
     enterAmount: 'Ingresar monto',
     charge: 'COBRAR',
@@ -184,6 +187,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   pt: {
     pos: 'POS',
     history: 'Histórico',
+    plan: 'Plano',
     settings: 'Configurações',
     enterAmount: 'Inserir valor',
     charge: 'COBRAR',

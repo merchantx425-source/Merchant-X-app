@@ -7,7 +7,16 @@ import { MerchantXLogo } from './MerchantXLogo';
 import { AssetSelector } from './AssetSelector';
 import { NumericKeypad } from './NumericKeypad';
 import { openWalletModal } from '../config/appkit';
-import { Settings as SettingsIcon, Wallet, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  Wallet,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Sparkles,
+  Lock,
+  ArrowRight,
+} from 'lucide-react';
 
 interface POSProps {
   amountInput: string;
@@ -28,6 +37,9 @@ interface POSProps {
   onRefreshRates?: () => void;
   ratesError?: string | null;
   lastRatesUpdated?: number;
+  isPro?: boolean;
+  freeTransactionsRemaining?: number;
+  onNavigateToSubscription?: () => void;
 }
 
 export const POS: React.FC<POSProps> = ({
@@ -49,6 +61,9 @@ export const POS: React.FC<POSProps> = ({
   onRefreshRates,
   ratesError,
   lastRatesUpdated,
+  isPro = false,
+  freeTransactionsRemaining = 10,
+  onNavigateToSubscription,
 }) => {
   const [walletConnectError, setWalletConnectError] = useState<string | null>(null);
   const [isOpeningWallet, setIsOpeningWallet] = useState(false);
@@ -132,24 +147,24 @@ export const POS: React.FC<POSProps> = ({
   }, [walletState, assetConfig.networkFamily]);
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col justify-between min-h-[calc(100vh-5rem)] sm:min-h-[640px] px-3 sm:px-4 py-2 select-none">
+    <div className="w-full max-w-md mx-auto flex flex-col justify-between px-3 sm:px-4 pt-1.5 pb-24 sm:pb-28 select-none">
       {/* 1. Terminal Top Bar */}
-      <header className="flex items-center justify-between py-2 border-b border-purple-900/20">
+      <header className="flex items-center justify-between py-1.5 border-b border-purple-900/20">
         {/* Brand */}
-        <div className="flex items-center gap-2.5">
-          <MerchantXLogo size="sm" />
-          <span className="font-extrabold text-lg sm:text-xl font-display tracking-tight text-white">
+        <div className="flex items-center gap-2">
+          <MerchantXLogo size="xs" />
+          <span className="font-extrabold text-base sm:text-lg font-display tracking-tight text-white">
             Merchant <span className="text-amber-400">X</span>
           </span>
         </div>
 
         {/* Right Action Icons: Wallet Status & Settings */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
             onClick={walletState.isConnected ? onOpenWalletModal : handleConnectWalletClick}
             disabled={isOpeningWallet}
-            className={`flex items-center gap-1.5 py-1.5 px-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
+            className={`flex items-center gap-1.5 py-1 px-2.5 rounded-xl border text-xs font-semibold transition-all cursor-pointer ${
               walletState.isConnected
                 ? 'bg-emerald-950/40 border-emerald-800/60 text-emerald-300 hover:bg-emerald-900/50'
                 : 'bg-[#181a24] border-zinc-700/80 text-zinc-300 hover:text-white hover:border-amber-500/50'
@@ -160,7 +175,7 @@ export const POS: React.FC<POSProps> = ({
             ) : (
               <Wallet className="w-3.5 h-3.5 text-amber-400" />
             )}
-            <span className="font-mono text-[11px]">
+            <span className="font-mono text-[10px] sm:text-[11px]">
               {walletState.isConnected
                 ? `Connected ✓ ${connectedDisplayAddress || ''}`
                 : isOpeningWallet
@@ -172,17 +187,17 @@ export const POS: React.FC<POSProps> = ({
           <button
             type="button"
             onClick={onOpenSettings}
-            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800/60 rounded-xl transition-colors cursor-pointer"
+            className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800/60 rounded-xl transition-colors cursor-pointer"
             title="Terminal Settings"
           >
-            <SettingsIcon className="w-5 h-5" />
+            <SettingsIcon className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
         </div>
       </header>
 
       {/* Wallet Error Notice if any */}
       {walletConnectError && (
-        <div className="mt-2 p-2.5 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center justify-between text-xs text-red-200">
+        <div className="mt-1 p-2 bg-red-950/40 border border-red-800/60 rounded-xl flex items-center justify-between text-xs text-red-200">
           <div className="flex items-center gap-1.5">
             <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
             <span>{walletConnectError}</span>
@@ -190,26 +205,60 @@ export const POS: React.FC<POSProps> = ({
           <button
             type="button"
             onClick={handleConnectWalletClick}
-            className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px] rounded-lg transition-colors cursor-pointer"
+            className="px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] rounded-lg transition-colors cursor-pointer"
           >
             Retry
           </button>
         </div>
       )}
 
-      {/* 2. Amount Display Area (Large & Centered) */}
-      <section className="flex flex-col items-center justify-center py-4 sm:py-5 text-center my-auto">
-        <div className="text-[11px] font-bold uppercase tracking-widest text-zinc-400 mb-1 font-mono">
+      {/* Free Tier Monthly Limit Notice */}
+      {!isPro && freeTransactionsRemaining <= 0 && (
+        <div className="mt-1.5 p-2.5 bg-gradient-to-r from-amber-500/20 via-purple-950/30 to-amber-500/20 border border-amber-500/50 rounded-xl flex items-center justify-between gap-2 text-xs text-amber-200 shadow-md animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="font-semibold truncate">Free limit reached (10/10). Pro required to charge.</span>
+          </div>
+          {onNavigateToSubscription && (
+            <button
+              type="button"
+              onClick={onNavigateToSubscription}
+              className="px-2.5 py-1 bg-amber-500 hover:bg-amber-400 text-black font-black text-[10px] uppercase rounded-lg transition-all cursor-pointer shrink-0 shadow"
+            >
+              Upgrade $10
+            </button>
+          )}
+        </div>
+      )}
+
+      {!isPro && freeTransactionsRemaining > 0 && freeTransactionsRemaining <= 3 && (
+        <div className="mt-1 px-3 py-1 bg-zinc-900/90 border border-zinc-800 rounded-xl flex items-center justify-between text-[11px] text-zinc-400">
+          <span>Free plan: <strong className="text-amber-400">{freeTransactionsRemaining} tx remaining</strong> this month</span>
+          {onNavigateToSubscription && (
+            <button
+              type="button"
+              onClick={onNavigateToSubscription}
+              className="text-[10px] text-amber-400 hover:underline font-bold cursor-pointer"
+            >
+              Upgrade to Pro
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* 2. Amount Display Area (Compact & Centered) */}
+      <section className="flex flex-col items-center justify-center py-2 sm:py-3 text-center my-auto">
+        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-0.5 font-mono">
           {getTranslation(lang, 'enterAmount')}
         </div>
 
         {/* Large Fiat Amount */}
-        <div className="text-4xl sm:text-5xl md:text-6xl font-extrabold font-display tracking-tight text-white break-all px-2 transition-all">
+        <div className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-white break-all px-2 transition-all">
           {formattedFiatDisplay}
         </div>
 
         {/* Real Live Market Price & Calculated Payment */}
-        <div className="mt-2 space-y-1">
+        <div className="mt-1 space-y-0.5">
           {ratesError ? (
             <div className="flex items-center justify-center gap-1.5 text-xs text-red-400">
               <span>Unable to load current price</span>
@@ -226,7 +275,7 @@ export const POS: React.FC<POSProps> = ({
           ) : (
             <>
               {/* Market Price per Asset */}
-              <div className="text-[11px] sm:text-xs text-zinc-400 font-medium">
+              <div className="text-[10px] sm:text-[11px] text-zinc-400 font-medium">
                 {selectedAsset} market price:{' '}
                 <span className="text-zinc-200 font-mono font-semibold">
                   {fiatConfig.symbol}
@@ -245,18 +294,13 @@ export const POS: React.FC<POSProps> = ({
                   {formatCryptoAmount(estimatedCryptoAmount, selectedAsset)} {selectedAsset}
                 </span>
               </div>
-
-              {/* Update Timestamp */}
-              <div className="text-[10px] text-zinc-500 font-mono">
-                Price updated just now
-              </div>
             </>
           )}
         </div>
       </section>
 
       {/* 3. Crypto Asset Selection */}
-      <section className="my-2">
+      <section className="my-1">
         <AssetSelector
           selectedAsset={selectedAsset}
           onSelectAsset={onSelectAsset}
@@ -267,7 +311,7 @@ export const POS: React.FC<POSProps> = ({
         />
       </section>
 
-      {/* 4. Large Numeric Keypad & Charge Button */}
+      {/* 4. Compact Numeric Keypad & High-Visibility Charge Button */}
       <section className="mt-2 pb-2">
         <NumericKeypad
           onDigitPress={onDigitPress}

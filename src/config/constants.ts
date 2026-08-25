@@ -164,3 +164,11 @@ export const DEFAULT_SETTINGS = {
   customBtcReceivingAddress: '',
   customEvmReceivingAddress: '',
 };
+
+// Pro Subscription Configuration
+export const PRO_RECEIVING_ADDRESS = '0xc8217F870B77784a68566D677b4dEA9993677964';
+export const PRO_PRICE_USD = 10;
+export const FREE_MONTHLY_LIMIT = 10;
+export const PRO_SUBSCRIPTION_DAYS = 30;
+export const PRO_SUBSCRIPTION_MS = PRO_SUBSCRIPTION_DAYS * 24 * 60 * 60 * 1000;
+

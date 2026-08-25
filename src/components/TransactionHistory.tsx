@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { TransactionRecord, CryptoAsset, TxStatus } from '../types/merchant';
-import { SUPPORTED_FIAT, EXPLORER_URLS } from '../config/constants';
+import { TransactionRecord, CryptoAsset, TxStatus, AppSettings } from '../types/merchant';
+import { SUPPORTED_FIAT, EXPLORER_URLS, DEFAULT_SETTINGS } from '../config/constants';
 import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { exportTransactionsToPdf } from '../services/pdfExportService';
 import { getTranslation } from '../config/i18n';
 import {
   Search,
@@ -10,7 +11,9 @@ import {
   Clock,
   AlertCircle,
   FileSpreadsheet,
+  FileText,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 
 interface TransactionHistoryProps {
@@ -18,6 +21,7 @@ interface TransactionHistoryProps {
   onSelectReceipt: (tx: TransactionRecord) => void;
   onClearHistory?: () => void;
   language?: string;
+  settings?: AppSettings;
 }
 
 type FilterOption = 'ALL' | TxStatus | CryptoAsset;
@@ -26,10 +30,12 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   transactions,
   onSelectReceipt,
   language = 'en',
+  settings,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('ALL');
   const [inspectedTx, setInspectedTx] = useState<TransactionRecord | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Filter and search logic
   const filteredTransactions = transactions.filter((tx) => {
@@ -57,9 +63,24 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     return true;
   });
 
+  // Export filtered transactions as PDF
+  const handleExportPDF = () => {
+    setIsExportingPdf(true);
+    try {
+      const activeSettings: AppSettings = settings || DEFAULT_SETTINGS;
+      const dataset = filteredTransactions.length > 0 ? filteredTransactions : transactions;
+      exportTransactionsToPdf(dataset, activeSettings);
+    } catch (err) {
+      console.warn('PDF export error:', err);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   // Export transactions as CSV
   const handleExportCSV = () => {
     if (transactions.length === 0) return;
+    const dataset = filteredTransactions.length > 0 ? filteredTransactions : transactions;
 
     const headers = [
       'ID',
@@ -77,7 +98,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
       'Tx Hash',
     ];
 
-    const rows = transactions.map((t) => [
+    const rows = dataset.map((t) => [
       t.id,
       t.reference,
       t.formattedDate,
@@ -100,7 +121,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `merchant_x_transactions_${Date.now()}.csv`);
+    link.setAttribute('download', `MerchantX_Transactions_${Date.now()}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -135,12 +156,28 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={handleExportPDF}
+            disabled={transactions.length === 0 || isExportingPdf}
+            className="flex items-center gap-1.5 py-2 px-3 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 hover:brightness-110 disabled:opacity-40 disabled:pointer-events-none rounded-xl text-xs font-black text-black transition-all shadow-md cursor-pointer active:scale-[0.98]"
+            title="Download PDF statement"
+          >
+            {isExportingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-black" />
+            ) : (
+              <FileText className="w-3.5 h-3.5 text-black" />
+            )}
+            <span>{isExportingPdf ? 'Exporting...' : 'Export PDF'}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleExportCSV}
             disabled={transactions.length === 0}
             className="flex items-center gap-1.5 py-2 px-3 bg-[#181a24] hover:bg-[#202330] disabled:opacity-40 disabled:pointer-events-none border border-zinc-700/80 rounded-xl text-xs font-semibold text-zinc-200 transition-colors cursor-pointer"
+            title="Download CSV spreadsheet"
           >
-            <FileSpreadsheet className="w-4 h-4 text-amber-400" />
-            <span>{getTranslation(language, 'exportTx')}</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
+            <span>CSV</span>
           </button>
         </div>
       </div>

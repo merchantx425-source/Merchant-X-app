@@ -1,27 +1,32 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  CryptoAsset,
-  TransactionRecord,
-  WalletState,
-  AssetBalance,
-  AppSettings,
   AppTab,
+  CryptoAsset,
+  AssetBalance,
+  TransactionRecord,
+  AppSettings,
+  WalletState,
+  SubscriptionState,
+  SubscriptionRecord,
 } from './types/merchant';
-import { SUPPORTED_ASSETS, DEFAULT_SETTINGS, ASSET_ORDER } from './config/constants';
+import {
+  SUPPORTED_ASSETS,
+  DEFAULT_SETTINGS,
+  ASSET_ORDER,
+  FREE_MONTHLY_LIMIT,
+  PRO_SUBSCRIPTION_MS,
+} from './config/constants';
 import {
   fetchLiveCryptoRates,
   fetchRealAssetBalance,
 } from './services/blockchainService';
+import { exportTransactionsToPdf } from './services/pdfExportService';
 import { disconnectWalletKit, onAppKitAccountChange } from './config/appkit';
 import { LoadingScreen } from './components/LoadingScreen';
 import { NotificationBar } from './components/NotificationBar';
 import { POS } from './components/POS';
 import { TransactionHistory } from './components/TransactionHistory';
+import { Subscription } from './components/Subscription';
 import { Settings } from './components/Settings';
 import { Navbar } from './components/Navbar';
 import { WalletModal } from './components/WalletModal';
@@ -32,6 +37,7 @@ const STORAGE_KEYS = {
   SETTINGS: 'merchant_x_settings_v1',
   WALLETS: 'merchant_x_wallets_v1',
   TRANSACTIONS: 'merchant_x_txs_v1',
+  SUBSCRIPTION: 'merchant_x_subscription_v1',
 };
 
 export default function App() {
@@ -89,11 +95,82 @@ export default function App() {
     return [];
   });
 
-  // 6. POS Keypad & Asset State
+  // 6. Subscription State (Free vs Pro)
+  const [subscriptionState, setSubscriptionState] = useState<SubscriptionState>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTION);
+      if (saved) {
+        const parsed: SubscriptionState = JSON.parse(saved);
+        const now = Date.now();
+        // Check if pro has expired
+        if (parsed.plan === 'pro' && parsed.proExpiresAt && parsed.proExpiresAt <= now) {
+          parsed.plan = 'free';
+        }
+        // Auto reset month if period expired
+        if (!parsed.currentPeriodStart || now - parsed.currentPeriodStart > PRO_SUBSCRIPTION_MS) {
+          parsed.currentPeriodStart = now;
+        }
+        return parsed;
+      }
+    } catch {
+      // Fallback
+    }
+    return {
+      plan: 'free',
+      proExpiresAt: null,
+      currentPeriodStart: Date.now(),
+      history: [],
+    };
+  });
+
+  // Periodically audit subscription expiry and monthly cycle resets
+  useEffect(() => {
+    const checkSubscriptionCycle = () => {
+      setSubscriptionState((prev) => {
+        const now = Date.now();
+        let modified = false;
+        let nextPlan = prev.plan;
+        let nextPeriodStart = prev.currentPeriodStart;
+
+        // 1. Pro expiry check
+        if (prev.plan === 'pro' && prev.proExpiresAt && prev.proExpiresAt <= now) {
+          nextPlan = 'free';
+          modified = true;
+        }
+
+        // 2. 30-day monthly period auto-reset
+        if (!nextPeriodStart || now - nextPeriodStart > PRO_SUBSCRIPTION_MS) {
+          nextPeriodStart = now;
+          modified = true;
+        }
+
+        if (modified) {
+          const updated: SubscriptionState = {
+            ...prev,
+            plan: nextPlan,
+            currentPeriodStart: nextPeriodStart,
+          };
+          try {
+            localStorage.setItem(STORAGE_KEYS.SUBSCRIPTION, JSON.stringify(updated));
+          } catch {
+            // Ignore
+          }
+          return updated;
+        }
+        return prev;
+      });
+    };
+
+    checkSubscriptionCycle();
+    const interval = setInterval(checkSubscriptionCycle, 60000); // Audit every 60s
+    return () => clearInterval(interval);
+  }, []);
+
+  // 7. POS Keypad & Asset State
   const [amountInput, setAmountInput] = useState<string>('');
   const [selectedAsset, setSelectedAsset] = useState<CryptoAsset>('VERSE');
 
-  // 7. Live Rates & Balances State
+  // 8. Live Rates State
   const [cryptoInFiatRates, setCryptoInFiatRates] = useState<Record<CryptoAsset, number>>({
     BTC: 102000000,
     ETH: 4980000,
@@ -101,9 +178,17 @@ export default function App() {
     POL: 660,
     VERSE: 0.02844,
   });
+  const [cryptoRatesUsd, setCryptoRatesUsd] = useState<Record<CryptoAsset, number>>({
+    BTC: 96000,
+    ETH: 3100,
+    USDT: 1,
+    POL: 0.42,
+    VERSE: 0.000018,
+  });
   const [ratesError, setRatesError] = useState<string | null>(null);
   const [lastRatesUpdated, setLastRatesUpdated] = useState<number>(Date.now());
 
+  // 9. Balances State
   const [balances, setBalances] = useState<Record<CryptoAsset, AssetBalance>>({
     VERSE: { symbol: 'VERSE', balance: '0', balanceRaw: 0, isLoading: false },
     POL: { symbol: 'POL', balance: '0', balanceRaw: 0, isLoading: false },
@@ -113,10 +198,31 @@ export default function App() {
   });
   const [isRefreshingBalances, setIsRefreshingBalances] = useState(false);
 
-  // 8. Modals State
+  // 10. Modals State
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false);
   const [activeReceiptTx, setActiveReceiptTx] = useState<TransactionRecord | null>(null);
+
+  // Derive Pro status & Transaction Usage
+  const isPro = useMemo(() => {
+    return (
+      subscriptionState.plan === 'pro' &&
+      !!subscriptionState.proExpiresAt &&
+      subscriptionState.proExpiresAt > Date.now()
+    );
+  }, [subscriptionState]);
+
+  const successfulTxThisPeriod = useMemo(() => {
+    const periodStart = subscriptionState.currentPeriodStart || Date.now() - PRO_SUBSCRIPTION_MS;
+    return transactions.filter(
+      (tx) => tx.status === 'paid' && tx.timestamp >= periodStart
+    ).length;
+  }, [transactions, subscriptionState.currentPeriodStart]);
+
+  const freeTransactionsRemaining = useMemo(() => {
+    if (isPro) return Infinity;
+    return Math.max(0, FREE_MONTHLY_LIMIT - successfulTxThisPeriod);
+  }, [isPro, successfulTxThisPeriod]);
 
   // Apply Theme class to HTML root
   useEffect(() => {
@@ -146,6 +252,9 @@ export default function App() {
       setRatesError(null);
       const rates = await fetchLiveCryptoRates(settings.fiatCurrency);
       setCryptoInFiatRates(rates.cryptoInFiat);
+      if (rates.cryptoUsd) {
+        setCryptoRatesUsd(rates.cryptoUsd);
+      }
       setLastRatesUpdated(Date.now());
     } catch (err: any) {
       console.warn('Rates refresh notice:', err);
@@ -220,100 +329,100 @@ export default function App() {
           };
           try {
             localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(updated));
-          } catch {}
+          } catch {
+            // Ignore
+          }
           return updated;
         });
       }
     });
 
     return () => {
-      unsubscribe();
+      if (unsubscribe) unsubscribe();
     };
   }, []);
 
-  // Trigger balance fetch immediately when wallet state changes, and poll periodically
+  // Update Balances whenever wallets or custom receiving addresses change
   useEffect(() => {
     refreshBalances();
-    const interval = setInterval(refreshBalances, 20000); // 20s auto balance sync
-    return () => clearInterval(interval);
   }, [
-    refreshBalances,
+    walletState.evmAddress,
+    walletState.btcAddress,
+    settings.customBtcReceivingAddress,
+    settings.customEvmReceivingAddress,
   ]);
 
-  // Persist Settings
-  const handleUpdateSettings = (newSettings: Partial<AppSettings>) => {
+  // Save Settings Changes
+  const handleUpdateSettings = (newPartial: Partial<AppSettings>) => {
     setSettings((prev) => {
-      const updated = { ...prev, ...newSettings };
+      const updated = { ...prev, ...newPartial };
       try {
         localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(updated));
-      } catch (err) {
-        console.error('Failed to save settings to localStorage:', err);
+      } catch {
+        // Ignore
       }
       return updated;
     });
   };
 
-  // Persist Wallets
+  // Connect Wallet Action
   const handleConnectWallet = (
-    evmAddress: string | null,
-    btcAddress: string | null,
-    providerName: string
+    provider: string,
+    evmAddr: string | null,
+    btcAddr: string | null
   ) => {
-    const updated: WalletState = {
-      evmAddress,
-      btcAddress,
-      evmChainId: 137,
-      isConnected: !!(evmAddress || btcAddress),
-      walletProvider: providerName,
+    const newState: WalletState = {
+      evmAddress: evmAddr,
+      btcAddress: btcAddr,
+      evmChainId: evmAddr ? 137 : null, // Default Polygon
+      isConnected: !!(evmAddr || btcAddr),
+      walletProvider: provider,
     };
-    setWalletState(updated);
+    setWalletState(newState);
     try {
-      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(updated));
+      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(newState));
     } catch {
       // Ignore
     }
   };
 
+  // Disconnect Wallet Action
   const handleDisconnectWallet = async () => {
-    try {
-      await disconnectWalletKit();
-    } catch {
-      // Ignore
-    }
-    const updated: WalletState = {
+    await disconnectWalletKit();
+    const emptyState: WalletState = {
       evmAddress: null,
       btcAddress: null,
       evmChainId: null,
       isConnected: false,
       walletProvider: null,
     };
-    setWalletState(updated);
+    setWalletState(emptyState);
     try {
-      localStorage.removeItem(STORAGE_KEYS.WALLETS);
+      localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(emptyState));
     } catch {
       // Ignore
     }
   };
 
-  // Keypad Handlers
+  // Keypad Actions
   const handleDigitPress = (digit: string) => {
     setAmountInput((prev) => {
-      // Decimal point validation
       if (digit === '.') {
         if (prev.includes('.')) return prev;
         if (prev === '') return '0.';
         return prev + '.';
       }
 
-      // Max 2 decimal digits
-      if (prev.includes('.')) {
-        const [, decimals] = prev.split('.');
-        if (decimals && decimals.length >= 2) return prev;
-      }
-
-      // Prevent leading double zeros
       if (prev === '0' && digit !== '.') {
         return digit;
+      }
+
+      // Check decimal digits limit (max 2 decimal places)
+      if (prev.includes('.')) {
+        const [, decimalPart] = prev.split('.');
+        if (decimalPart && decimalPart.length >= 2) {
+          return prev;
+        }
       }
 
       // Prevent unrealistically long inputs
@@ -335,6 +444,12 @@ export default function App() {
 
   // Charge Trigger
   const handleChargePress = () => {
+    // Check Free Plan Transaction Limits
+    if (!isPro && freeTransactionsRemaining <= 0) {
+      setActiveTab('subscription');
+      return;
+    }
+
     const config = SUPPORTED_ASSETS[selectedAsset];
     const merchantAddress =
       config.networkFamily === 'bitcoin'
@@ -380,46 +495,27 @@ export default function App() {
     setActiveTab('pos');
   };
 
-  // Export Transactions helper for Settings screen
+  // Export Transactions helper for Settings screen (Official PDF Statement)
   const handleExportTransactions = () => {
     if (transactions.length === 0) return;
-    const headers = [
-      'ID',
-      'Reference',
-      'Date',
-      'Time',
-      'Status',
-      'Fiat Amount',
-      'Currency',
-      'Crypto Amount',
-      'Asset',
-      'Network',
-      'Merchant Wallet',
-      'Tx Hash',
-    ];
-    const rows = transactions.map((t) => [
-      t.id,
-      t.reference,
-      t.formattedDate,
-      t.formattedTime,
-      t.status,
-      t.amountFiat,
-      t.fiatCurrency,
-      t.amountCrypto,
-      t.cryptoAsset,
-      t.network,
-      t.merchantWallet,
-      t.txHash || '',
-    ]);
-    const csv =
-      'data:text/csv;charset=utf-8,' +
-      [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const link = document.createElement('a');
-    link.href = encodeURI(csv);
-    link.download = `merchant_x_transactions_${Date.now()}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportTransactionsToPdf(transactions, settings);
+  };
+
+  // Subscription Success Callback (Unlocks Pro for exactly 30 days)
+  const handleSubscriptionSuccess = (record: SubscriptionRecord) => {
+    const now = Date.now();
+    const updated: SubscriptionState = {
+      plan: 'pro',
+      proExpiresAt: now + PRO_SUBSCRIPTION_MS,
+      currentPeriodStart: now,
+      history: [record, ...(subscriptionState.history || [])],
+    };
+    setSubscriptionState(updated);
+    try {
+      localStorage.setItem(STORAGE_KEYS.SUBSCRIPTION, JSON.stringify(updated));
+    } catch {
+      // Ignore
+    }
   };
 
   // Current merchant receiving address for selected asset
@@ -474,6 +570,9 @@ export default function App() {
             onRefreshRates={refreshRates}
             ratesError={ratesError}
             lastRatesUpdated={lastRatesUpdated}
+            isPro={isPro}
+            freeTransactionsRemaining={freeTransactionsRemaining}
+            onNavigateToSubscription={() => setActiveTab('subscription')}
           />
         )}
 
@@ -481,6 +580,19 @@ export default function App() {
           <TransactionHistory
             transactions={transactions}
             onSelectReceipt={(tx) => setActiveReceiptTx(tx)}
+            language={settings.language}
+            settings={settings}
+          />
+        )}
+
+        {activeTab === 'subscription' && (
+          <Subscription
+            subscriptionState={subscriptionState}
+            transactions={transactions}
+            walletState={walletState}
+            onOpenWalletModal={() => setIsWalletModalOpen(true)}
+            cryptoRatesUsd={cryptoRatesUsd}
+            onSubscriptionSuccess={handleSubscriptionSuccess}
             language={settings.language}
           />
         )}
@@ -494,6 +606,9 @@ export default function App() {
             onDisconnectWallet={handleDisconnectWallet}
             onOpenHistory={() => setActiveTab('transactions')}
             onExportTransactions={handleExportTransactions}
+            onOpenSubscription={() => setActiveTab('subscription')}
+            subscriptionState={subscriptionState}
+            isPro={isPro}
           />
         )}
       </main>
@@ -503,6 +618,7 @@ export default function App() {
         currentTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
         language={settings.language}
+        isPro={isPro}
       />
 
       {/* 5. Wallet Connection Modal */}
