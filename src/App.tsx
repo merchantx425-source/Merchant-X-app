@@ -409,9 +409,9 @@ export default function App() {
 
   // Connect Wallet Action
   const handleConnectWallet = (
-    provider: string,
     evmAddr: string | null,
-    btcAddr: string | null
+    btcAddr: string | null,
+    provider: string
   ) => {
     const newState: WalletState = {
       evmAddress: evmAddr,
@@ -428,7 +428,7 @@ export default function App() {
     }
     setTimeout(() => {
       refreshBalances();
-    }, 100);
+    }, 50);
   };
 
   // Disconnect Wallet Action

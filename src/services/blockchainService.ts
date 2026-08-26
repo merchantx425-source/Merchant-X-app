@@ -137,28 +137,67 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
       let btcUsd = defaultUsdRates.BTC;
       let ethUsd = defaultUsdRates.ETH;
       let usdtUsd = 1.0;
+      let usdcUsd = 1.0;
       let polUsd = defaultUsdRates.POL;
       let verseUsd = defaultUsdRates.VERSE;
 
-      // 1. Primary Verified Multi-Source Fetch for VERSE Token ($0.000018 baseline)
-      // A. CoinGecko simple price for Bitcoin.com's official VERSE token (id: 'verse')
+      // 1. PRIMARY SOURCE: CoinMarketCap Keyless API
+      // CoinMarketCap IDs: 1 (BTC), 1027 (ETH), 825 (USDT), 3408 (USDC), 28321 (POL), 22929 (VERSE)
+      let cmcSuccess = false;
       try {
-        const cgVerseRes = await fetch(
-          'https://api.coingecko.com/api/v3/simple/price?ids=verse&vs_currencies=usd',
+        const cmcRes = await fetch(
+          'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1,1027,825,3408,28321,22929',
           { headers: { Accept: 'application/json' } }
         ).then((r) => (r.ok ? r.json() : null));
 
-        if (cgVerseRes?.verse?.usd && parseFloat(cgVerseRes.verse.usd) > 0) {
-          const p = parseFloat(cgVerseRes.verse.usd);
-          if (p > 0.000005 && p < 0.0001) {
-            verseUsd = p;
+        if (cmcRes?.data && Array.isArray(cmcRes.data)) {
+          for (const item of cmcRes.data) {
+            const sym = (item.symbol || '').toUpperCase();
+            const price = item.quotes?.[0]?.price;
+            if (typeof price === 'number' && price > 0) {
+              if (sym === 'BTC') btcUsd = price;
+              else if (sym === 'ETH') ethUsd = price;
+              else if (sym === 'USDT') usdtUsd = price;
+              else if (sym === 'USDC') usdcUsd = price;
+              else if (sym === 'POL' || sym === 'MATIC') polUsd = price;
+              else if (sym === 'VERSE') verseUsd = price;
+            }
           }
+          cmcSuccess = true;
         }
-      } catch (err) {
-        console.warn('[Rates] CoinGecko VERSE notice:', err);
+      } catch (cmcErr) {
+        console.warn('[Rates] CoinMarketCap primary quote notice:', cmcErr);
       }
 
-      // B. Bitcoin.com official markets endpoint for VERSE
+      // CoinMarketCap Slug fallback if needed
+      if (!cmcSuccess || verseUsd === defaultUsdRates.VERSE) {
+        try {
+          const slugs = 'bitcoin,ethereum,tether,usd-coin,polygon-ecosystem-token,verse-token';
+          const cmcSlugRes = await fetch(
+            `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?slug=${slugs}`,
+            { headers: { Accept: 'application/json' } }
+          ).then((r) => (r.ok ? r.json() : null));
+
+          if (cmcSlugRes?.data && Array.isArray(cmcSlugRes.data)) {
+            for (const item of cmcSlugRes.data) {
+              const sym = (item.symbol || '').toUpperCase();
+              const price = item.quotes?.[0]?.price;
+              if (typeof price === 'number' && price > 0) {
+                if (sym === 'BTC') btcUsd = price;
+                else if (sym === 'ETH') ethUsd = price;
+                else if (sym === 'USDT') usdtUsd = price;
+                else if (sym === 'USDC') usdcUsd = price;
+                else if (sym === 'POL' || sym === 'MATIC') polUsd = price;
+                else if (sym === 'VERSE') verseUsd = price;
+              }
+            }
+          }
+        } catch (slugErr) {
+          console.warn('[Rates] CoinMarketCap slug notice:', slugErr);
+        }
+      }
+
+      // 2. High-reliability fallback sources for VERSE
       if (verseUsd === defaultUsdRates.VERSE) {
         try {
           const btcComRes = await fetch('https://markets.api.bitcoin.com/coin/data?c=VERSE').then((r) =>
@@ -168,12 +207,23 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
           if (p && parseFloat(p) > 0) {
             verseUsd = parseFloat(p);
           }
-        } catch {
-          // Fallback to DEX
-        }
+        } catch {}
       }
 
-      // C. DexScreener Ethereum canonical VERSE (0x249cA82617eC3DfB2589c4c17ab7EC9765350a18)
+      if (verseUsd === defaultUsdRates.VERSE) {
+        try {
+          const cgVerseRes = await fetch(
+            'https://api.coingecko.com/api/v3/simple/price?ids=verse,verse-token&vs_currencies=usd',
+            { headers: { Accept: 'application/json' } }
+          ).then((r) => (r.ok ? r.json() : null));
+
+          const p = cgVerseRes?.verse?.usd || cgVerseRes?.['verse-token']?.usd;
+          if (p && parseFloat(p) > 0) {
+            verseUsd = parseFloat(p);
+          }
+        } catch {}
+      }
+
       if (verseUsd === defaultUsdRates.VERSE) {
         try {
           const ethDexRes = await fetch(
@@ -189,66 +239,29 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
               verseUsd = parseFloat(bestPair.priceUsd);
             }
           }
-        } catch {
-          // Fallback to Polygon DEX
-        }
+        } catch {}
       }
 
-      // D. DexScreener Polygon VERSE (0xc3aa16362d381282d7bfcf73812d46e300958ad8)
-      if (verseUsd === defaultUsdRates.VERSE) {
+      // 3. Fallback for BTC, ETH, USDT, POL if CoinMarketCap failed
+      if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH) {
         try {
-          const polyDexRes = await fetch(
-            'https://api.dexscreener.com/latest/dex/tokens/0xc3aa16362d381282d7bfcf73812d46e300958ad8'
+          const ids = 'bitcoin,ethereum,tether,usd-coin,matic-network';
+          const cgRes = await fetch(
+            `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
+            { headers: { Accept: 'application/json' } }
           ).then((r) => (r.ok ? r.json() : null));
 
-          if (polyDexRes?.pairs && polyDexRes.pairs.length > 0) {
-            const sorted = polyDexRes.pairs.sort(
-              (a: any, b: any) => (parseFloat(b.liquidity?.usd || '0') - parseFloat(a.liquidity?.usd || '0'))
-            );
-            const bestPair = sorted.find((p: any) => parseFloat(p.priceUsd || '0') > 0);
-            if (bestPair && parseFloat(bestPair.priceUsd) > 0) {
-              verseUsd = parseFloat(bestPair.priceUsd);
-            }
+          if (cgRes) {
+            if (cgRes.bitcoin?.usd) btcUsd = cgRes.bitcoin.usd;
+            if (cgRes.ethereum?.usd) ethUsd = cgRes.ethereum.usd;
+            if (cgRes.tether?.usd) usdtUsd = cgRes.tether.usd;
+            if (cgRes['usd-coin']?.usd) usdcUsd = cgRes['usd-coin'].usd;
+            if (cgRes['matic-network']?.usd) polUsd = cgRes['matic-network'].usd;
           }
-        } catch {
-          // Fallback
-        }
+        } catch {}
       }
 
-      // E. GeckoTerminal API for VERSE
-      if (verseUsd === defaultUsdRates.VERSE) {
-        try {
-          const gtRes = await fetch(
-            'https://api.geckoterminal.com/api/v2/networks/eth/tokens/0x249ca82617ec3dfb2589c4c17ab7ec9765350a18'
-          ).then((r) => (r.ok ? r.json() : null));
-          const p = gtRes?.data?.attributes?.price_usd;
-          if (p && parseFloat(p) > 0) {
-            verseUsd = parseFloat(p);
-          }
-        } catch {
-          // Ignore
-        }
-      }
-
-      // 2. Query CoinGecko for Bitcoin, Ethereum, POL, Tether
-      try {
-        const ids = 'bitcoin,ethereum,tether,matic-network';
-        const cgRes = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
-          { headers: { Accept: 'application/json' } }
-        ).then((r) => (r.ok ? r.json() : null));
-
-        if (cgRes) {
-          if (cgRes.bitcoin?.usd) btcUsd = cgRes.bitcoin.usd;
-          if (cgRes.ethereum?.usd) ethUsd = cgRes.ethereum.usd;
-          if (cgRes.tether?.usd) usdtUsd = cgRes.tether.usd;
-          if (cgRes['matic-network']?.usd) polUsd = cgRes['matic-network'].usd;
-        }
-      } catch (cgErr) {
-        console.warn('[Rates] CoinGecko notice:', cgErr);
-      }
-
-      // 3. Binance Public Fallback for BTC / ETH
+      // 4. Binance Public Fallback for BTC / ETH
       if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH) {
         try {
           const [bBtc, bEth] = await Promise.all([
@@ -257,12 +270,10 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
           ]);
           if (bBtc?.price) btcUsd = parseFloat(bBtc.price);
           if (bEth?.price) ethUsd = parseFloat(bEth.price);
-        } catch {
-          // Keep current
-        }
+        } catch {}
       }
 
-      // 4. Fetch Fiat rates vs USD
+      // 5. Fetch Fiat rates vs USD
       let fiatRates: Record<string, number> = defaultFiatToUsd;
       try {
         const fiatRes = await fetch('https://open.er-api.com/v6/latest/USD').then((r) =>
@@ -638,8 +649,9 @@ async function queryBitcoinBalance(btcAddress: string): Promise<number> {
 
   try {
     return await Promise.any(endpoints.map((fn) => fn()));
-  } catch {
-    return 0;
+  } catch (err) {
+    console.warn(`Bitcoin query error for ${cleanAddr}:`, err);
+    throw new Error('Unable to query Bitcoin on-chain balance');
   }
 }
 
@@ -662,12 +674,20 @@ export async function fetchRealAssetBalance(
       if (cleanAddr.startsWith('0x')) {
         return { balance: '0', balanceRaw: 0, error: null };
       }
-      const btc = await queryBitcoinBalance(cleanAddr);
-      return {
-        balance: formatExactBalance(btc, 'BTC'),
-        balanceRaw: btc,
-        error: null,
-      };
+      try {
+        const btc = await queryBitcoinBalance(cleanAddr);
+        return {
+          balance: formatExactBalance(btc, 'BTC'),
+          balanceRaw: btc,
+          error: null,
+        };
+      } catch (btcErr) {
+        return {
+          balance: '0',
+          balanceRaw: 0,
+          error: 'Unable to load wallet balances. Please try again',
+        };
+      }
     }
 
     // 2. EVM Queries (Must be 0x address)
@@ -703,13 +723,14 @@ export async function fetchRealAssetBalance(
       };
     }
 
-    // C. VERSE (Polygon VERSE + Ethereum VERSE)
+    // C. VERSE (Polygon fxVERSE 0xc708D6F2153933DAA50B2D0758955Be0A + Ethereum canonical VERSE 0x249cA82617eC3DfB2589c4c17ab7EC9765350a18 + Polygon VERSE 0xc3aa16362d381282d7bfcf73812d46e300958ad8)
     if (asset === 'VERSE') {
-      const [polyVerse, ethVerse] = await Promise.all([
-        queryErc20Balance('0xc3aa16362d381282d7bfcf73812d46e300958ad8', cleanAddr, 18, 'POLYGON'),
+      const [fxPolyVerse, ethVerse, polyVerse] = await Promise.all([
+        queryErc20Balance('0xc708d6f2153933daa50b2d0758955be0a93a8fec', cleanAddr, 18, 'POLYGON'),
         queryErc20Balance('0x249cA82617eC3DfB2589c4c17ab7EC9765350a18', cleanAddr, 18, 'ETHEREUM'),
+        queryErc20Balance('0xc3aa16362d381282d7bfcf73812d46e300958ad8', cleanAddr, 18, 'POLYGON'),
       ]);
-      const total = polyVerse + ethVerse;
+      const total = fxPolyVerse + ethVerse + polyVerse;
       return {
         balance: formatExactBalance(total, 'VERSE'),
         balanceRaw: total,
@@ -748,11 +769,11 @@ export async function fetchRealAssetBalance(
 
     return { balance: '0', balanceRaw: 0, error: null };
   } catch (err: any) {
-    console.warn(`Balance query notice for ${asset}:`, err);
+    console.warn(`Balance query error for ${asset}:`, err);
     return {
       balance: '0',
       balanceRaw: 0,
-      error: null,
+      error: 'Unable to load wallet balances. Please try again',
     };
   }
 }

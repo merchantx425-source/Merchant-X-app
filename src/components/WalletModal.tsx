@@ -100,6 +100,65 @@ export const WalletModal: React.FC<WalletModalProps> = ({
     onClose();
   };
 
+  // Direct Connect Injected EVM Wallet (MetaMask, Coinbase, Rabby)
+  const handleConnectInjectedEvm = async () => {
+    setErrorMsg(null);
+    if (typeof window !== 'undefined' && (window as any).ethereum) {
+      try {
+        const accounts = await (window as any).ethereum.request({ method: 'eth_requestAccounts' });
+        if (accounts && accounts.length > 0) {
+          onConnectWallet(accounts[0], walletState.btcAddress, 'Browser Injected (MetaMask)');
+          onClose();
+          return;
+        }
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Failed to connect EVM wallet.');
+      }
+    } else {
+      setErrorMsg('No injected EVM browser extension detected. Please use AppKit modal.');
+    }
+  };
+
+  // Direct Connect Injected Bitcoin Wallet (UniSat, Xverse, OKX)
+  const handleConnectBitcoinExtension = async () => {
+    setErrorMsg(null);
+    if (typeof window !== 'undefined') {
+      const unisat = (window as any).unisat;
+      const okx = (window as any).okxwallet?.bitcoin;
+      const btcProvider = (window as any).BitcoinProvider || (window as any).XverseProviders?.BitcoinProvider;
+
+      try {
+        if (unisat) {
+          const accounts = await unisat.requestAccounts();
+          if (accounts && accounts.length > 0) {
+            onConnectWallet(walletState.evmAddress, accounts[0], 'UniSat Bitcoin Wallet');
+            onClose();
+            return;
+          }
+        } else if (okx) {
+          const res = await okx.connect();
+          if (res?.address) {
+            onConnectWallet(walletState.evmAddress, res.address, 'OKX Bitcoin Wallet');
+            onClose();
+            return;
+          }
+        } else if (btcProvider) {
+          const res = await btcProvider.connect();
+          if (res?.address) {
+            onConnectWallet(walletState.evmAddress, res.address, 'Bitcoin Wallet Provider');
+            onClose();
+            return;
+          }
+        } else {
+          setActiveTab('manual');
+          setErrorMsg('No Bitcoin browser extension detected. Enter your BTC receiving address below or scan via AppKit QR.');
+        }
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Failed to connect Bitcoin wallet.');
+      }
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 overflow-y-auto">
       <div className="relative w-full max-w-md bg-[#13151b] border border-purple-900/30 rounded-3xl p-5 sm:p-6 shadow-2xl text-white overflow-hidden my-auto max-h-[90vh] flex flex-col">
@@ -189,6 +248,37 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
                 <ArrowRight className="w-4 h-4 text-amber-400 group-hover:translate-x-1 transition-transform" />
               </button>
+
+              {/* Quick 1-Click Connect for Injected Browser Extensions */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleConnectInjectedEvm}
+                  className="p-2.5 bg-[#0e1017] hover:bg-[#161924] border border-purple-800/40 hover:border-purple-500/70 rounded-xl text-left transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center border border-purple-500/30 shrink-0">
+                    <Wallet className="w-3.5 h-3.5 text-purple-400" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="text-[11px] font-bold text-white truncate">EVM Browser Wallet</div>
+                    <div className="text-[9px] text-zinc-400 truncate">MetaMask / Rabby / Brave</div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConnectBitcoinExtension}
+                  className="p-2.5 bg-[#0e1017] hover:bg-[#161924] border border-amber-800/40 hover:border-amber-500/70 rounded-xl text-left transition-all cursor-pointer flex items-center gap-2"
+                >
+                  <div className="w-7 h-7 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/30 shrink-0">
+                    <Wallet className="w-3.5 h-3.5 text-amber-400" />
+                  </div>
+                  <div className="overflow-hidden">
+                    <div className="text-[11px] font-bold text-white truncate">Bitcoin Wallet</div>
+                    <div className="text-[9px] text-zinc-400 truncate">UniSat / Xverse / OKX</div>
+                  </div>
+                </button>
+              </div>
 
               {/* Network Badges */}
               <div className="grid grid-cols-3 gap-1.5 pt-0.5">

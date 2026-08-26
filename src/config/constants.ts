@@ -10,9 +10,9 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     network: 'Polygon',
     networkFamily: 'evm',
     decimals: 18,
-    // Canonical Verse contract address on Polygon
-    contractAddress: '0xc3aa16362d381282d7bfcf73812d46e300958ad8',
-    coingeckoId: 'verse-world',
+    // Official Polygon fxVERSE ERC-20 contract (0xc708D6F2153933DAA50B2D0758955Be0A...)
+    contractAddress: '0xc708d6f2153933daa50b2d0758955be0a93a8fec',
+    coingeckoId: 'verse-token',
     iconColor: '#00D2FF',
     badge: 'Polygon',
   },
