@@ -1,6 +1,6 @@
 export type CryptoAsset = 'VERSE' | 'POL' | 'USDT' | 'USDC' | 'ETH' | 'BTC';
 export type BlockchainNetwork = 'Polygon' | 'Ethereum' | 'Bitcoin';
-export type FiatCurrency = 'NGN' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'ZAR' | 'KES' | 'GHS';
+export type FiatCurrency = 'NGN' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'AUD' | 'JPY' | 'CHF' | 'ZAR' | 'KES' | 'GHS';
 export type TxStatus = 'paid' | 'pending' | 'failed';
 export type AppTheme = 'dark' | 'light' | 'system';
 export type AppTab = 'pos' | 'transactions' | 'subscription' | 'settings';

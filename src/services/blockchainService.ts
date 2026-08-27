@@ -1,16 +1,25 @@
 import { ethers } from 'ethers';
-import { RPC_URLS, SUPPORTED_ASSETS, ERC20_ABI } from '../config/constants';
+import { RPC_URLS, SUPPORTED_ASSETS, ERC20_ABI, SUPPORTED_FIAT } from '../config/constants';
 import { CryptoAsset, FiatCurrency, TransactionRecord } from '../types/merchant';
 
-// Cache for live exchange rates
+// Cache structure for live exchange rates
 interface RateCache {
   timestamp: number;
-  rates: Record<string, number>; // coingeckoId -> USD price
-  fiatRates: Record<string, number>; // USD -> Fiat (e.g. USD -> NGN = 1550)
+  cryptoUsd: Record<CryptoAsset, number>;
+  fiatRates: Record<string, number>; // USD -> Fiat rates (e.g. USD -> NGN = 1580, USD -> EUR = 0.92)
 }
 
 let ratesCache: RateCache | null = null;
-const CACHE_TTL = 20000; // 20 seconds
+const CACHE_TTL = 20000; // 20 seconds cache freshness
+
+export interface LiveRatesResult {
+  cryptoUsd: Record<CryptoAsset, number>;
+  fiatPerUsd: number;
+  fiatRates: Record<string, number>;
+  cryptoInFiat: Record<CryptoAsset, number>;
+  timestamp: number;
+  fiatCurrency: FiatCurrency;
+}
 
 /**
  * Ultra-fast Direct JSON-RPC caller across multiple nodes with timeout race
@@ -102,224 +111,287 @@ export async function executeWithEthereumFallback<T>(
 }
 
 /**
- * Fetch real live exchange rates from CoinGecko, Bitcoin.com Markets, DexScreener, GeckoTerminal, and ExchangeRate API
+ * Fetch real USD base crypto prices and real FX fiat conversion rates
+ * Architecture:
+ * 1. Crypto USD Price (Base)
+ * 2. Foreign Exchange Rates (USD -> Fiat, e.g. NGN, EUR, GBP, CAD, AUD, JPY, CHF, ZAR, KES, GHS)
+ * 3. Crypto in Fiat = Crypto USD Price × (USD -> Fiat Rate)
  */
-export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<{
-  cryptoUsd: Record<CryptoAsset, number>;
-  fiatPerUsd: number;
-  cryptoInFiat: Record<CryptoAsset, number>;
-}> {
+export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'USD'): Promise<LiveRatesResult> {
   const now = Date.now();
 
-  // Baseline standard USD prices (verified realistic market rates)
+  // Baseline standard USD prices (used as sensible starting values)
   const defaultUsdRates: Record<CryptoAsset, number> = {
     BTC: 64500.0,
     ETH: 3150.0,
     USDT: 1.0,
     USDC: 1.0,
     POL: 0.42,
-    VERSE: 0.000018, // Verified current rate: $0.000018 USD
+    VERSE: 0.000018, // Official Verse market rate
   };
 
   const defaultFiatToUsd: Record<FiatCurrency, number> = {
-    NGN: 1580.0,
     USD: 1.0,
+    NGN: 1580.0,
     EUR: 0.92,
     GBP: 0.79,
     CAD: 1.36,
+    AUD: 1.52,
+    JPY: 154.5,
+    CHF: 0.88,
     ZAR: 18.2,
     KES: 130.0,
     GHS: 15.5,
   };
 
-  try {
-    if (!ratesCache || now - ratesCache.timestamp > CACHE_TTL) {
-      let btcUsd = defaultUsdRates.BTC;
-      let ethUsd = defaultUsdRates.ETH;
-      let usdtUsd = 1.0;
-      let usdcUsd = 1.0;
-      let polUsd = defaultUsdRates.POL;
-      let verseUsd = defaultUsdRates.VERSE;
+  // If cache is fresh and contains rates, we can derive the requested fiat rates directly
+  if (ratesCache && now - ratesCache.timestamp < CACHE_TTL) {
+    const usdPrices = ratesCache.cryptoUsd;
+    const fiatPerUsd = ratesCache.fiatRates[fiat] || (fiat === 'USD' ? 1.0 : defaultFiatToUsd[fiat] || 1.0);
+    const cryptoInFiat: Record<CryptoAsset, number> = {
+      BTC: usdPrices.BTC * fiatPerUsd,
+      ETH: usdPrices.ETH * fiatPerUsd,
+      USDT: usdPrices.USDT * fiatPerUsd,
+      USDC: usdPrices.USDC * fiatPerUsd,
+      POL: usdPrices.POL * fiatPerUsd,
+      VERSE: usdPrices.VERSE * fiatPerUsd,
+    };
 
-      // 1. PRIMARY SOURCE: CoinMarketCap Keyless API
-      // CoinMarketCap IDs: 1 (BTC), 1027 (ETH), 825 (USDT), 3408 (USDC), 28321 (POL), 22929 (VERSE)
-      let cmcSuccess = false;
-      try {
-        const cmcRes = await fetch(
-          'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1,1027,825,3408,28321,22929',
-          { headers: { Accept: 'application/json' } }
-        ).then((r) => (r.ok ? r.json() : null));
-
-        if (cmcRes?.data && Array.isArray(cmcRes.data)) {
-          for (const item of cmcRes.data) {
-            const sym = (item.symbol || '').toUpperCase();
-            const price = item.quotes?.[0]?.price;
-            if (typeof price === 'number' && price > 0) {
-              if (sym === 'BTC') btcUsd = price;
-              else if (sym === 'ETH') ethUsd = price;
-              else if (sym === 'USDT') usdtUsd = price;
-              else if (sym === 'USDC') usdcUsd = price;
-              else if (sym === 'POL' || sym === 'MATIC') polUsd = price;
-              else if (sym === 'VERSE') verseUsd = price;
-            }
-          }
-          cmcSuccess = true;
-        }
-      } catch (cmcErr) {
-        console.warn('[Rates] CoinMarketCap primary quote notice:', cmcErr);
-      }
-
-      // CoinMarketCap Slug fallback if needed
-      if (!cmcSuccess || verseUsd === defaultUsdRates.VERSE) {
-        try {
-          const slugs = 'bitcoin,ethereum,tether,usd-coin,polygon-ecosystem-token,verse-token';
-          const cmcSlugRes = await fetch(
-            `https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?slug=${slugs}`,
-            { headers: { Accept: 'application/json' } }
-          ).then((r) => (r.ok ? r.json() : null));
-
-          if (cmcSlugRes?.data && Array.isArray(cmcSlugRes.data)) {
-            for (const item of cmcSlugRes.data) {
-              const sym = (item.symbol || '').toUpperCase();
-              const price = item.quotes?.[0]?.price;
-              if (typeof price === 'number' && price > 0) {
-                if (sym === 'BTC') btcUsd = price;
-                else if (sym === 'ETH') ethUsd = price;
-                else if (sym === 'USDT') usdtUsd = price;
-                else if (sym === 'USDC') usdcUsd = price;
-                else if (sym === 'POL' || sym === 'MATIC') polUsd = price;
-                else if (sym === 'VERSE') verseUsd = price;
-              }
-            }
-          }
-        } catch (slugErr) {
-          console.warn('[Rates] CoinMarketCap slug notice:', slugErr);
-        }
-      }
-
-      // 2. High-reliability fallback sources for VERSE
-      if (verseUsd === defaultUsdRates.VERSE) {
-        try {
-          const btcComRes = await fetch('https://markets.api.bitcoin.com/coin/data?c=VERSE').then((r) =>
-            r.ok ? r.json() : null
-          );
-          const p = btcComRes?.price || btcComRes?.data?.price || btcComRes?.data?.rate;
-          if (p && parseFloat(p) > 0) {
-            verseUsd = parseFloat(p);
-          }
-        } catch {}
-      }
-
-      if (verseUsd === defaultUsdRates.VERSE) {
-        try {
-          const cgVerseRes = await fetch(
-            'https://api.coingecko.com/api/v3/simple/price?ids=verse,verse-token&vs_currencies=usd',
-            { headers: { Accept: 'application/json' } }
-          ).then((r) => (r.ok ? r.json() : null));
-
-          const p = cgVerseRes?.verse?.usd || cgVerseRes?.['verse-token']?.usd;
-          if (p && parseFloat(p) > 0) {
-            verseUsd = parseFloat(p);
-          }
-        } catch {}
-      }
-
-      if (verseUsd === defaultUsdRates.VERSE) {
-        try {
-          const ethDexRes = await fetch(
-            'https://api.dexscreener.com/latest/dex/tokens/0x249cA82617eC3DfB2589c4c17ab7EC9765350a18'
-          ).then((r) => (r.ok ? r.json() : null));
-
-          if (ethDexRes?.pairs && ethDexRes.pairs.length > 0) {
-            const sorted = ethDexRes.pairs.sort(
-              (a: any, b: any) => (parseFloat(b.liquidity?.usd || '0') - parseFloat(a.liquidity?.usd || '0'))
-            );
-            const bestPair = sorted.find((p: any) => parseFloat(p.priceUsd || '0') > 0);
-            if (bestPair && parseFloat(bestPair.priceUsd) > 0) {
-              verseUsd = parseFloat(bestPair.priceUsd);
-            }
-          }
-        } catch {}
-      }
-
-      // 3. Fallback for BTC, ETH, USDT, POL if CoinMarketCap failed
-      if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH) {
-        try {
-          const ids = 'bitcoin,ethereum,tether,usd-coin,matic-network';
-          const cgRes = await fetch(
-            `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd`,
-            { headers: { Accept: 'application/json' } }
-          ).then((r) => (r.ok ? r.json() : null));
-
-          if (cgRes) {
-            if (cgRes.bitcoin?.usd) btcUsd = cgRes.bitcoin.usd;
-            if (cgRes.ethereum?.usd) ethUsd = cgRes.ethereum.usd;
-            if (cgRes.tether?.usd) usdtUsd = cgRes.tether.usd;
-            if (cgRes['usd-coin']?.usd) usdcUsd = cgRes['usd-coin'].usd;
-            if (cgRes['matic-network']?.usd) polUsd = cgRes['matic-network'].usd;
-          }
-        } catch {}
-      }
-
-      // 4. Binance Public Fallback for BTC / ETH
-      if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH) {
-        try {
-          const [bBtc, bEth] = await Promise.all([
-            fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT').then((r) => r.json()),
-            fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT').then((r) => r.json()),
-          ]);
-          if (bBtc?.price) btcUsd = parseFloat(bBtc.price);
-          if (bEth?.price) ethUsd = parseFloat(bEth.price);
-        } catch {}
-      }
-
-      // 5. Fetch Fiat rates vs USD
-      let fiatRates: Record<string, number> = defaultFiatToUsd;
-      try {
-        const fiatRes = await fetch('https://open.er-api.com/v6/latest/USD').then((r) =>
-          r.ok ? r.json() : null
-        );
-        if (fiatRes?.rates) {
-          fiatRates = fiatRes.rates;
-        } else {
-          const backupRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD').then((r) =>
-            r.ok ? r.json() : null
-          );
-          if (backupRes?.rates) {
-            fiatRates = backupRes.rates;
-          }
-        }
-      } catch {
-        // Fallback
-      }
-
-      ratesCache = {
-        timestamp: now,
-        rates: {
-          BTC: btcUsd,
-          ETH: ethUsd,
-          USDT: usdtUsd,
-          USDC: 1.0,
-          POL: polUsd,
-          VERSE: verseUsd,
-        },
-        fiatRates,
-      };
-    }
-  } catch (err) {
-    console.warn('[Rates] Live rates warning, using fallback cache:', err);
+    return {
+      cryptoUsd: usdPrices,
+      fiatPerUsd,
+      fiatRates: ratesCache.fiatRates,
+      cryptoInFiat,
+      timestamp: ratesCache.timestamp,
+      fiatCurrency: fiat,
+    };
   }
 
-  const usdPrices: Record<CryptoAsset, number> = {
-    BTC: ratesCache?.rates?.BTC || defaultUsdRates.BTC,
-    ETH: ratesCache?.rates?.ETH || defaultUsdRates.ETH,
-    USDT: ratesCache?.rates?.USDT || defaultUsdRates.USDT,
-    USDC: ratesCache?.rates?.USDC || defaultUsdRates.USDC,
-    POL: ratesCache?.rates?.POL || defaultUsdRates.POL,
-    VERSE: ratesCache?.rates?.VERSE || defaultUsdRates.VERSE,
+  let btcUsd = ratesCache?.cryptoUsd?.BTC || defaultUsdRates.BTC;
+  let ethUsd = ratesCache?.cryptoUsd?.ETH || defaultUsdRates.ETH;
+  let usdtUsd = ratesCache?.cryptoUsd?.USDT || 1.0;
+  let usdcUsd = ratesCache?.cryptoUsd?.USDC || 1.0;
+  let polUsd = ratesCache?.cryptoUsd?.POL || defaultUsdRates.POL;
+  let verseUsd = ratesCache?.cryptoUsd?.VERSE || defaultUsdRates.VERSE;
+
+  // -------------------------------------------------------------
+  // 1. PRIMARY SOURCE: CoinGecko Direct & GeckoTerminal APIs
+  // Covers:
+  // - BTC: 'bitcoin' / WBTC
+  // - ETH: 'ethereum' / WETH
+  // - USDT: 'tether'
+  // - USDC: 'usd-coin'
+  // - POL: 'polygon-ecosystem-token' / 'matic-network' / WPOL
+  // - VERSE: 'verse-token' / 'verse' + Polygon fxVERSE & Ethereum VERSE
+  // -------------------------------------------------------------
+  let cgSuccess = false;
+
+  // A. Primary CoinGecko Simple Price API
+  try {
+    const cgController = new AbortController();
+    const cgTimer = setTimeout(() => cgController.abort(), 4000);
+    const cgRes = await fetch(
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,usd-coin,polygon-ecosystem-token,matic-network,verse-token,verse&vs_currencies=usd',
+      { headers: { Accept: 'application/json' }, signal: cgController.signal }
+    ).then((r) => (r.ok ? r.json() : null));
+    clearTimeout(cgTimer);
+
+    if (cgRes && typeof cgRes === 'object') {
+      if (cgRes.bitcoin?.usd && cgRes.bitcoin.usd > 0) btcUsd = cgRes.bitcoin.usd;
+      if (cgRes.ethereum?.usd && cgRes.ethereum.usd > 0) ethUsd = cgRes.ethereum.usd;
+      if (cgRes.tether?.usd && cgRes.tether.usd > 0) usdtUsd = cgRes.tether.usd;
+      if (cgRes['usd-coin']?.usd && cgRes['usd-coin'].usd > 0) usdcUsd = cgRes['usd-coin'].usd;
+      if (cgRes['polygon-ecosystem-token']?.usd && cgRes['polygon-ecosystem-token'].usd > 0) {
+        polUsd = cgRes['polygon-ecosystem-token'].usd;
+      } else if (cgRes['matic-network']?.usd && cgRes['matic-network'].usd > 0) {
+        polUsd = cgRes['matic-network'].usd;
+      }
+      if (cgRes['verse-token']?.usd && cgRes['verse-token'].usd > 0) {
+        verseUsd = cgRes['verse-token'].usd;
+      } else if (cgRes.verse?.usd && cgRes.verse.usd > 0) {
+        verseUsd = cgRes.verse.usd;
+      }
+      cgSuccess = true;
+    }
+  } catch {
+    // Continue to GeckoTerminal
+  }
+
+  // B. CoinGecko's GeckoTerminal on-chain API (Ultra-reliable real-time CoinGecko feeds)
+  // Especially critical for VERSE (official Polygon fxVERSE token 0xc708d6f2153933daa50b2d0758955be0a93a8fec)
+  try {
+    const [gtVersePoly, gtVerseEth, gtPol, gtEth, gtBtc] = await Promise.all([
+      // CoinGecko GeckoTerminal Polygon fxVERSE
+      fetch('https://api.geckoterminal.com/api/v2/networks/polygon_pos/tokens/0xc708d6f2153933daa50b2d0758955be0a93a8fec')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      // CoinGecko GeckoTerminal Ethereum VERSE
+      fetch('https://api.geckoterminal.com/api/v2/networks/eth/tokens/0x249cA82617eC3DfB2589c4c17ab7EC9765350a18')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      // CoinGecko GeckoTerminal Polygon POL
+      fetch('https://api.geckoterminal.com/api/v2/networks/polygon_pos/tokens/0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      // CoinGecko GeckoTerminal WETH
+      fetch('https://api.geckoterminal.com/api/v2/networks/eth/tokens/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      // CoinGecko GeckoTerminal WBTC
+      fetch('https://api.geckoterminal.com/api/v2/networks/eth/tokens/0x2260fac5e5542a773aa44fbcfedf7c193bc2c599')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ]);
+
+    const vPolyPrice = parseFloat(gtVersePoly?.data?.attributes?.price_usd || '0');
+    const vEthPrice = parseFloat(gtVerseEth?.data?.attributes?.price_usd || '0');
+    const polGtPrice = parseFloat(gtPol?.data?.attributes?.price_usd || '0');
+    const ethGtPrice = parseFloat(gtEth?.data?.attributes?.price_usd || '0');
+    const btcGtPrice = parseFloat(gtBtc?.data?.attributes?.price_usd || '0');
+
+    if (vPolyPrice > 0) {
+      verseUsd = vPolyPrice;
+    } else if (vEthPrice > 0) {
+      verseUsd = vEthPrice;
+    }
+
+    if (polGtPrice > 0 && (!cgSuccess || polUsd === defaultUsdRates.POL)) {
+      polUsd = polGtPrice;
+    }
+    if (ethGtPrice > 0 && (!cgSuccess || ethUsd === defaultUsdRates.ETH)) {
+      ethUsd = ethGtPrice;
+    }
+    if (btcGtPrice > 0 && (!cgSuccess || btcUsd === defaultUsdRates.BTC)) {
+      btcUsd = btcGtPrice;
+    }
+  } catch {
+    // Non-blocking
+  }
+
+  // -------------------------------------------------------------
+  // 2. FALLBACK CRYPTO SOURCES (DexScreener, Bitcoin.com Markets, CoinMarketCap, Binance)
+  // Ensures 100% uptime if CoinGecko is rate-limited or temporarily congested
+  // -------------------------------------------------------------
+  if (verseUsd === defaultUsdRates.VERSE) {
+    try {
+      const [btcComRes, dexFxRes] = await Promise.all([
+        fetch('https://markets.api.bitcoin.com/coin/data?c=VERSE')
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch('https://api.dexscreener.com/latest/dex/tokens/0xc708d6f2153933daa50b2d0758955be0a93a8fec')
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+
+      const btcComPrice = parseFloat(btcComRes?.price || btcComRes?.data?.price || btcComRes?.data?.rate || '0');
+      if (btcComPrice > 0) {
+        verseUsd = btcComPrice;
+      } else if (dexFxRes?.pairs && dexFxRes.pairs.length > 0) {
+        const sorted = dexFxRes.pairs.sort(
+          (a: any, b: any) => parseFloat(b.liquidity?.usd || '0') - parseFloat(a.liquidity?.usd || '0')
+        );
+        const bestPair = sorted.find((p: any) => parseFloat(p.priceUsd || '0') > 0);
+        if (bestPair && parseFloat(bestPair.priceUsd) > 0) {
+          verseUsd = parseFloat(bestPair.priceUsd);
+        }
+      }
+    } catch {}
+  }
+
+  // CoinMarketCap / Binance fallback for majors if needed
+  if (btcUsd === defaultUsdRates.BTC || ethUsd === defaultUsdRates.ETH || polUsd === defaultUsdRates.POL) {
+    try {
+      const cmcRes = await fetch(
+        'https://api.coinmarketcap.com/data-api/v3/cryptocurrency/quote/latest?id=1,1027,825,3408,28321,22929',
+        { headers: { Accept: 'application/json' } }
+      ).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+
+      if (cmcRes?.data && Array.isArray(cmcRes.data)) {
+        for (const item of cmcRes.data) {
+          const sym = (item.symbol || '').toUpperCase();
+          const price = item.quotes?.[0]?.price;
+          if (typeof price === 'number' && price > 0) {
+            if (sym === 'BTC' && btcUsd === defaultUsdRates.BTC) btcUsd = price;
+            else if (sym === 'ETH' && ethUsd === defaultUsdRates.ETH) ethUsd = price;
+            else if (sym === 'USDT') usdtUsd = price;
+            else if (sym === 'USDC') usdcUsd = price;
+            else if ((sym === 'POL' || sym === 'MATIC') && polUsd === defaultUsdRates.POL) polUsd = price;
+            else if (sym === 'VERSE' && verseUsd === defaultUsdRates.VERSE) verseUsd = price;
+          }
+        }
+      }
+    } catch {}
+
+    try {
+      const [bBtc, bEth, bPol] = await Promise.all([
+        fetch('https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('https://api.binance.com/api/v3/ticker/price?symbol=ETHUSDT').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        fetch('https://api.binance.com/api/v3/ticker/price?symbol=POLUSDT').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      ]);
+
+      if (bBtc?.price && parseFloat(bBtc.price) > 0 && btcUsd === defaultUsdRates.BTC) btcUsd = parseFloat(bBtc.price);
+      if (bEth?.price && parseFloat(bEth.price) > 0 && ethUsd === defaultUsdRates.ETH) ethUsd = parseFloat(bEth.price);
+      if (bPol?.price && parseFloat(bPol.price) > 0 && polUsd === defaultUsdRates.POL) polUsd = parseFloat(bPol.price);
+    } catch {}
+  }
+
+  // -------------------------------------------------------------
+  // 4. REAL FOREIGN EXCHANGE (FX) RATES vs USD
+  // Real-time rates for NGN, EUR, GBP, CAD, AUD, JPY, CHF, ZAR, KES, GHS
+  // -------------------------------------------------------------
+  let fiatRates: Record<string, number> = {
+    USD: 1.0,
+    ...defaultFiatToUsd,
   };
 
-  const fiatPerUsd = ratesCache?.fiatRates?.[fiat] || defaultFiatToUsd[fiat] || 1;
+  try {
+    // Primary: Open Exchange Rates API (open.er-api.com) - high rate limit, real central bank rates
+    const erRes = await fetch('https://open.er-api.com/v6/latest/USD')
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+
+    if (erRes?.rates && typeof erRes.rates === 'object') {
+      fiatRates = {
+        ...fiatRates,
+        ...erRes.rates,
+        USD: 1.0,
+      };
+    } else {
+      // Secondary: ExchangeRate-API
+      const exRes = await fetch('https://api.exchangerate-api.com/v4/latest/USD')
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+
+      if (exRes?.rates && typeof exRes.rates === 'object') {
+        fiatRates = {
+          ...fiatRates,
+          ...exRes.rates,
+          USD: 1.0,
+        };
+      }
+    }
+  } catch {
+    // Use fallback fiatRates
+  }
+
+  // Update in-memory cache
+  const usdPrices: Record<CryptoAsset, number> = {
+    BTC: btcUsd > 0 ? btcUsd : defaultUsdRates.BTC,
+    ETH: ethUsd > 0 ? ethUsd : defaultUsdRates.ETH,
+    USDT: usdtUsd > 0 ? usdtUsd : 1.0,
+    USDC: usdcUsd > 0 ? usdcUsd : 1.0,
+    POL: polUsd > 0 ? polUsd : defaultUsdRates.POL,
+    VERSE: verseUsd > 0 ? verseUsd : defaultUsdRates.VERSE,
+  };
+
+  ratesCache = {
+    timestamp: now,
+    cryptoUsd: usdPrices,
+    fiatRates,
+  };
+
+  // Convert USD base price to selected fiat: (Crypto USD Price) × (USD -> Fiat Rate)
+  const fiatPerUsd = fiatRates[fiat] || (fiat === 'USD' ? 1.0 : defaultFiatToUsd[fiat] || 1.0);
 
   const cryptoInFiat: Record<CryptoAsset, number> = {
     BTC: usdPrices.BTC * fiatPerUsd,
@@ -333,8 +405,112 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'NGN'): Promise<
   return {
     cryptoUsd: usdPrices,
     fiatPerUsd,
+    fiatRates,
     cryptoInFiat,
+    timestamp: now,
+    fiatCurrency: fiat,
   };
+}
+
+/**
+ * Format fiat amount with symbol and locale
+ */
+export function formatFiatAmount(
+  amount: number,
+  fiat: FiatCurrency,
+  options?: { minimumFractionDigits?: number; maximumFractionDigits?: number }
+): string {
+  const config = SUPPORTED_FIAT[fiat] || SUPPORTED_FIAT.USD;
+  const formatted = amount.toLocaleString(config.locale || 'en-US', {
+    minimumFractionDigits: options?.minimumFractionDigits ?? 2,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 2,
+  });
+  return `${config.symbol}${formatted}`;
+}
+
+/**
+ * Format crypto market price in selected fiat currency
+ * Handles micro-values like VERSE with high precision so they never display as $0 or ₦0
+ */
+export function formatCryptoMarketPrice(
+  priceInFiat: number,
+  fiat: FiatCurrency,
+  asset?: CryptoAsset
+): string {
+  const config = SUPPORTED_FIAT[fiat] || SUPPORTED_FIAT.USD;
+  if (priceInFiat <= 0 || isNaN(priceInFiat)) {
+    return `${config.symbol}0.00`;
+  }
+
+  if (priceInFiat < 0.0001) {
+    return `${config.symbol}${priceInFiat.toFixed(8).replace(/\.?0+$/, '')}`;
+  }
+  if (priceInFiat < 0.01) {
+    return `${config.symbol}${priceInFiat.toFixed(6)}`;
+  }
+  if (priceInFiat < 1.0) {
+    return `${config.symbol}${priceInFiat.toFixed(4)}`;
+  }
+  if (priceInFiat < 1000) {
+    return `${config.symbol}${priceInFiat.toLocaleString(config.locale || 'en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  }
+
+  return `${config.symbol}${priceInFiat.toLocaleString(config.locale || 'en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+/**
+ * Calculate the fiat value for an asset balance: balanceRaw × cryptoInFiatRate
+ */
+export function calculateAssetFiatValue(
+  balanceRaw: number,
+  cryptoInFiatRate: number
+): number {
+  if (isNaN(balanceRaw) || balanceRaw <= 0 || isNaN(cryptoInFiatRate) || cryptoInFiatRate <= 0) {
+    return 0;
+  }
+  return balanceRaw * cryptoInFiatRate;
+}
+
+/**
+ * Calculate total portfolio fiat value across all assets
+ */
+export function calculateTotalPortfolioFiatValue(
+  balances: Record<CryptoAsset, { balanceRaw: number }>,
+  cryptoInFiatRates: Record<CryptoAsset, number>
+): number {
+  let total = 0;
+  for (const asset of Object.keys(balances) as CryptoAsset[]) {
+    const raw = balances[asset]?.balanceRaw || 0;
+    const rate = cryptoInFiatRates[asset] || 0;
+    if (raw > 0 && rate > 0) {
+      total += raw * rate;
+    }
+  }
+  return total;
+}
+
+/**
+ * Calculate total portfolio USD value across all assets
+ */
+export function calculateTotalPortfolioUsdValue(
+  balances: Record<CryptoAsset, { balanceRaw: number }>,
+  cryptoRatesUsd: Record<CryptoAsset, number>
+): number {
+  let total = 0;
+  for (const asset of Object.keys(balances) as CryptoAsset[]) {
+    const raw = balances[asset]?.balanceRaw || 0;
+    const rate = cryptoRatesUsd[asset] || 0;
+    if (raw > 0 && rate > 0) {
+      total += raw * rate;
+    }
+  }
+  return total;
 }
 
 /**

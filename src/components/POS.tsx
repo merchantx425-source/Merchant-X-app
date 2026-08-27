@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { CryptoAsset, AssetBalance, WalletState, AppSettings } from '../types/merchant';
 import { SUPPORTED_FIAT, SUPPORTED_ASSETS } from '../config/constants';
-import { formatCryptoAmount, formatAddress } from '../services/blockchainService';
+import { formatCryptoAmount, formatAddress, formatCryptoMarketPrice } from '../services/blockchainService';
 import { getTranslation } from '../config/i18n';
 import { MerchantXLogo } from './MerchantXLogo';
 import { AssetSelector } from './AssetSelector';
@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Sparkles,
+  RefreshCw,
+  Clock,
 } from 'lucide-react';
 
 interface POSProps {
@@ -56,6 +58,7 @@ export const POS: React.FC<POSProps> = ({
   settings,
   onRefreshRates,
   ratesError,
+  lastRatesUpdated,
   isPro = false,
   freeTransactionsRemaining = 10,
   onNavigateToSubscription,
@@ -261,16 +264,24 @@ export const POS: React.FC<POSProps> = ({
           ) : (
             <>
               {/* Market Price per Asset */}
-              <div className="text-[10px] sm:text-[11px] text-zinc-400 font-medium">
-                {selectedAsset} market price:{' '}
-                <span className="text-zinc-200 font-mono font-semibold">
-                  {fiatConfig.symbol}
-                  {marketPrice.toLocaleString('en-US', {
-                    minimumFractionDigits: marketPrice < 1 ? 4 : 0,
-                    maximumFractionDigits: marketPrice < 1 ? 6 : 2,
-                  })}{' '}
-                  / {selectedAsset}
+              <div className="flex items-center justify-center gap-2 text-[10px] sm:text-[11px] text-zinc-400 font-medium">
+                <span>
+                  {selectedAsset} market price:{' '}
+                  <span className="text-zinc-100 font-mono font-semibold">
+                    {formatCryptoMarketPrice(marketPrice, settings.fiatCurrency, selectedAsset)} / {selectedAsset}
+                  </span>
                 </span>
+                {onRefreshRates && (
+                  <button
+                    type="button"
+                    onClick={onRefreshRates}
+                    className="inline-flex items-center gap-1 text-[9px] text-zinc-500 hover:text-amber-400 transition-colors cursor-pointer"
+                    title="Refresh market price"
+                  >
+                    <RefreshCw className="w-2.5 h-2.5" />
+                    <span>{lastRatesUpdated ? new Date(lastRatesUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live'}</span>
+                  </button>
+                )}
               </div>
 
               {/* Calculated Customer Payment Amount */}

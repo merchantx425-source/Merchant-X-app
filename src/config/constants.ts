@@ -75,17 +75,17 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
 export const ASSET_ORDER: CryptoAsset[] = ['VERSE', 'POL', 'USDT', 'USDC', 'ETH', 'BTC'];
 
 export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
-  NGN: {
-    code: 'NGN',
-    symbol: '₦',
-    name: 'Nigerian Naira',
-    locale: 'en-NG',
-  },
   USD: {
     code: 'USD',
     symbol: '$',
     name: 'US Dollar',
     locale: 'en-US',
+  },
+  NGN: {
+    code: 'NGN',
+    symbol: '₦',
+    name: 'Nigerian Naira',
+    locale: 'en-NG',
   },
   EUR: {
     code: 'EUR',
@@ -104,6 +104,24 @@ export const SUPPORTED_FIAT: Record<FiatCurrency, FiatCurrencyConfig> = {
     symbol: 'CA$',
     name: 'Canadian Dollar',
     locale: 'en-CA',
+  },
+  AUD: {
+    code: 'AUD',
+    symbol: 'A$',
+    name: 'Australian Dollar',
+    locale: 'en-AU',
+  },
+  JPY: {
+    code: 'JPY',
+    symbol: '¥',
+    name: 'Japanese Yen',
+    locale: 'ja-JP',
+  },
+  CHF: {
+    code: 'CHF',
+    symbol: 'CHF',
+    name: 'Swiss Franc',
+    locale: 'de-CH',
   },
   ZAR: {
     code: 'ZAR',

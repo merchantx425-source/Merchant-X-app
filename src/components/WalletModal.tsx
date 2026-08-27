@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { WALLETCONNECT_PROJECT_ID, openWalletModal, disconnectWalletKit } from '../config/appkit';
-import { WalletState, CryptoAsset, AssetBalance } from '../types/merchant';
-import { SUPPORTED_ASSETS, ASSET_ORDER } from '../config/constants';
+import { WalletState, CryptoAsset, AssetBalance, FiatCurrency } from '../types/merchant';
+import { SUPPORTED_ASSETS, ASSET_ORDER, SUPPORTED_FIAT } from '../config/constants';
 import { CryptoAssetIcon } from './CryptoAssetIcon';
+import {
+  calculateAssetFiatValue,
+  calculateTotalPortfolioFiatValue,
+  formatFiatAmount,
+} from '../services/blockchainService';
 import {
   X,
   ShieldCheck,
@@ -12,6 +17,7 @@ import {
   Wallet,
   Lock,
   RefreshCw,
+  TrendingUp,
 } from 'lucide-react';
 import { MerchantXLogo } from './MerchantXLogo';
 
@@ -24,6 +30,8 @@ interface WalletModalProps {
   balances?: Record<CryptoAsset, AssetBalance>;
   onRefreshBalances?: () => void;
   isRefreshingBalances?: boolean;
+  cryptoInFiatRates?: Record<CryptoAsset, number>;
+  fiatCurrency?: FiatCurrency;
 }
 
 export const WalletModal: React.FC<WalletModalProps> = ({
@@ -35,11 +43,21 @@ export const WalletModal: React.FC<WalletModalProps> = ({
   balances,
   onRefreshBalances,
   isRefreshingBalances = false,
+  cryptoInFiatRates,
+  fiatCurrency = 'USD',
 }) => {
   const [activeTab, setActiveTab] = useState<'appkit' | 'manual'>('appkit');
   const [manualEvm, setManualEvm] = useState(walletState.evmAddress || '');
   const [manualBtc, setManualBtc] = useState(walletState.btcAddress || '');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fiatConfig = SUPPORTED_FIAT[fiatCurrency] || SUPPORTED_FIAT.USD;
+
+  // Calculate total portfolio fiat value using the same pricing engine
+  const totalPortfolioValue = useMemo(() => {
+    if (!balances || !cryptoInFiatRates) return 0;
+    return calculateTotalPortfolioFiatValue(balances, cryptoInFiatRates);
+  }, [balances, cryptoInFiatRates]);
 
   if (!isOpen) return null;
 
@@ -378,38 +396,74 @@ export const WalletModal: React.FC<WalletModalProps> = ({
                 </div>
               )}
 
-              {/* Live On-Chain Balances Grid */}
+              {/* Live On-Chain Balances Grid & Portfolio Value */}
               {balances && (
-                <div className="mt-2 pt-2 border-t border-zinc-800/60">
-                  <div className="text-[11px] font-semibold text-zinc-400 mb-1.5 flex items-center justify-between">
-                    <span>Live On-Chain Balances</span>
+                <div className="mt-2 pt-2 border-t border-zinc-800/60 space-y-2">
+                  {/* Total Portfolio Value Banner */}
+                  <div className="p-2.5 bg-gradient-to-r from-amber-500/15 via-purple-900/20 to-amber-500/10 border border-amber-500/30 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-amber-500/20 flex items-center justify-center border border-amber-500/40">
+                        <TrendingUp className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] uppercase font-bold tracking-wider text-zinc-400">Total Portfolio Value</div>
+                        <div className="text-xs sm:text-sm font-black font-mono text-amber-300">
+                          {formatFiatAmount(totalPortfolioValue, fiatCurrency)}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[9px] font-medium text-zinc-400 bg-zinc-900/80 px-2 py-0.5 rounded-md border border-zinc-800">
+                      Live Base USD
+                    </span>
+                  </div>
+
+                  <div className="text-[11px] font-semibold text-zinc-400 flex items-center justify-between px-0.5">
+                    <span>On-Chain Asset Balances</span>
                     <span className="text-[9px] text-zinc-500 font-normal">Real-time RPC</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                     {ASSET_ORDER.map((sym) => {
                       const bData = balances[sym];
+                      const rate = cryptoInFiatRates?.[sym] || 0;
+                      const fiatVal = calculateAssetFiatValue(bData?.balanceRaw || 0, rate);
+
                       return (
                         <div
                           key={sym}
-                          className="bg-[#0b0c10] border border-zinc-800/90 rounded-xl p-1.5 flex flex-col items-center justify-center text-center"
+                          className="bg-[#0b0c10] border border-zinc-800/90 hover:border-zinc-700 rounded-xl p-2 flex flex-col justify-between text-left transition-colors"
                         >
-                          <div className="flex items-center gap-1 mb-0.5">
-                            <CryptoAssetIcon asset={sym} size="sm" />
-                            <span className="text-[10px] font-bold text-white">{sym}</span>
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5">
+                              <CryptoAssetIcon asset={sym} size="sm" />
+                              <span className="text-[11px] font-bold text-white">{sym}</span>
+                            </div>
+                            <span className="text-[8px] text-zinc-500 font-medium">
+                              {SUPPORTED_ASSETS[sym].network === 'Polygon' ? 'Polygon' : SUPPORTED_ASSETS[sym].network === 'Ethereum' ? 'Ethereum' : 'Bitcoin'}
+                            </span>
                           </div>
+
                           {bData?.isLoading ? (
-                            <div className="h-2.5 w-10 bg-zinc-800 animate-pulse rounded my-0.5" />
+                            <div className="space-y-1 my-0.5">
+                              <div className="h-3 w-16 bg-zinc-800 animate-pulse rounded" />
+                              <div className="h-2 w-10 bg-zinc-800/60 animate-pulse rounded" />
+                            </div>
                           ) : bData?.error ? (
-                            <span className="text-[8px] text-red-400/90 font-medium truncate max-w-full">
+                            <span className="text-[9px] text-red-400/90 font-medium truncate">
                               Unable to load
                             </span>
                           ) : (
-                            <span
-                              className="text-[10px] font-mono font-bold text-amber-300 truncate max-w-full"
-                              title={`${bData?.balance ?? '0'} ${sym}`}
-                            >
-                              {bData?.balance ?? '0'}
-                            </span>
+                            <div className="space-y-0.5">
+                              <div
+                                className="text-xs font-mono font-bold text-zinc-100 truncate"
+                                title={`${bData?.balance ?? '0'} ${sym}`}
+                              >
+                                {bData?.balance ?? '0'} <span className="text-[10px] text-zinc-400 font-normal">{sym}</span>
+                              </div>
+                              <div className="text-[10px] font-mono text-amber-400/90 font-semibold truncate">
+                                ≈ {formatFiatAmount(fiatVal, fiatCurrency)}
+                              </div>
+                            </div>
                           )}
                         </div>
                       );

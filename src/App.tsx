@@ -687,6 +687,8 @@ export default function App() {
         balances={balances}
         onRefreshBalances={refreshBalances}
         isRefreshingBalances={isRefreshingBalances}
+        cryptoInFiatRates={cryptoInFiatRates}
+        fiatCurrency={settings.fiatCurrency}
       />
 
       {/* 6. Charge Flow & Blockchain Verification Modal */}
