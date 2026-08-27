@@ -52,8 +52,8 @@ export const SettingsView: React.FC = () => {
 
   // Check biometric support on mount
   useEffect(() => {
-    isBiometricAvailable().then((supported) => {
-      setBiometricSupported(supported);
+    isBiometricAvailable().then((res) => {
+      setBiometricSupported(res.available);
     });
   }, []);
 

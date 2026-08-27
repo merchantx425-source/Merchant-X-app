@@ -33,6 +33,7 @@ import { WalletModal } from './components/WalletModal';
 import { ChargeFlowModal } from './components/ChargeFlowModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { BiometricModal } from './components/BiometricModal';
 
 const STORAGE_KEYS = {
   SETTINGS: 'merchant_x_settings_v1',
@@ -44,6 +45,9 @@ const STORAGE_KEYS = {
 export default function App() {
   // 1. Initial Loading Animation State
   const [isLoadingApp, setIsLoadingApp] = useState(true);
+
+  // Terminal Lock Screen State for Biometrics
+  const [isTerminalLocked, setIsTerminalLocked] = useState(false);
 
   // 2. Active Screen Tab
   const [activeTab, setActiveTab] = useState<AppTab>('pos');
@@ -599,6 +603,8 @@ export default function App() {
         ratesError={ratesError}
         onRefreshRates={refreshRates}
         isRefreshingBalances={isRefreshingBalances}
+        biometricEnabled={settings.biometricEnabled}
+        onLockTerminal={() => setIsTerminalLocked(true)}
       />
 
       {/* 3. Main Terminal Screen Container */}
@@ -665,6 +671,7 @@ export default function App() {
             subscriptionState={subscriptionState}
             isPro={isPro}
             onOpenInstallPrompt={() => setShowPwaInstallModal(true)}
+            onLockTerminal={() => setIsTerminalLocked(true)}
           />
         )}
       </main>
@@ -724,6 +731,15 @@ export default function App() {
       <PWAInstallPrompt
         forceOpen={showPwaInstallModal}
         onClose={() => setShowPwaInstallModal(false)}
+      />
+
+      {/* 9. Biometric Terminal Lock Screen */}
+      <BiometricModal
+        isOpen={isTerminalLocked}
+        isLockScreen={true}
+        onSuccess={() => setIsTerminalLocked(false)}
+        title="Merchant X Terminal Locked"
+        subtitle="Touch your phone’s fingerprint sensor to unlock"
       />
     </div>
   );

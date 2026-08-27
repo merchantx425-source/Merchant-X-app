@@ -2,10 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme } from '../types/merchant';
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
-import { isBiometricAvailable, registerBiometricPasskey } from '../services/biometricService';
+import {
+  isBiometricAvailable,
+  registerBiometricPasskey,
+  verifyBiometricAuth,
+  triggerBiometricHaptic,
+  getStoredTerminalPin,
+  setStoredTerminalPin,
+} from '../services/biometricService';
 import { getTranslation } from '../config/i18n';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { TermsOfServiceModal } from './TermsOfServiceModal';
+import { BiometricModal } from './BiometricModal';
 import { MerchantXLogo } from './MerchantXLogo';
 import {
   Wallet,
@@ -26,6 +34,8 @@ import {
   Download,
   Smartphone,
   Lock,
+  KeyRound,
+  CheckCircle2,
 } from 'lucide-react';
 import { isStandalone } from '../services/pwaService';
 
@@ -41,6 +51,7 @@ interface SettingsProps {
   subscriptionState?: SubscriptionState;
   isPro?: boolean;
   onOpenInstallPrompt?: () => void;
+  onLockTerminal?: () => void;
 }
 
 const RECEIPT_THEMES: { id: ReceiptTheme; name: string; previewColor: string }[] = [
@@ -64,34 +75,61 @@ export const Settings: React.FC<SettingsProps> = ({
   subscriptionState,
   isPro = false,
   onOpenInstallPrompt,
+  onLockTerminal,
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
-  const [biometricSupported, setBiometricSupported] = useState<boolean | null>(null);
+  const [biometricInfo, setBiometricInfo] = useState<{
+    available: boolean;
+    platformAuthenticator: boolean;
+    type: string;
+  }>({
+    available: true,
+    platformAuthenticator: false,
+    type: 'fingerprint',
+  });
   const [biometricError, setBiometricError] = useState<string | null>(null);
+  const [showBiometricTestModal, setShowBiometricTestModal] = useState(false);
+  const [testSuccessMessage, setTestSuccessMessage] = useState<string | null>(null);
+  const [terminalPinInput, setTerminalPinInput] = useState(() => getStoredTerminalPin() || '');
+  const [savedPinNotice, setSavedPinNotice] = useState(false);
   const [appInstalled, setAppInstalled] = useState(false);
 
   const lang = settings.language;
 
   useEffect(() => {
-    isBiometricAvailable().then((res) => setBiometricSupported(res));
+    isBiometricAvailable().then((res) => {
+      setBiometricInfo(res);
+    });
     setAppInstalled(isStandalone());
   }, []);
 
   // Biometric toggle handler
   const handleToggleBiometric = async () => {
     setBiometricError(null);
+    setTestSuccessMessage(null);
     if (!settings.biometricEnabled) {
       try {
         await registerBiometricPasskey(settings.merchantName);
         onUpdateSettings({ biometricEnabled: true });
+        setTestSuccessMessage('Biometric fingerprint registered successfully!');
+        setTimeout(() => setTestSuccessMessage(null), 4000);
       } catch (err: any) {
         setBiometricError(err.message || 'Failed to enable biometric authentication.');
       }
     } else {
       onUpdateSettings({ biometricEnabled: false });
     }
+  };
+
+  // Save Terminal PIN
+  const handleSavePin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setStoredTerminalPin(terminalPinInput.trim());
+    setSavedPinNotice(true);
+    triggerBiometricHaptic('success');
+    setTimeout(() => setSavedPinNotice(false), 3000);
   };
 
   // Share Application
@@ -496,19 +534,40 @@ export const Settings: React.FC<SettingsProps> = ({
 
       {/* 7. SECURITY & BIOMETRICS */}
       <div className="space-y-2">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
-          Security
-        </h2>
-        <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-3">
+        <div className="flex items-center justify-between px-1">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+            Security & Terminal Lock
+          </h2>
+          {settings.biometricEnabled && onLockTerminal && (
+            <button
+              type="button"
+              onClick={onLockTerminal}
+              className="text-[11px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 cursor-pointer"
+            >
+              <Lock className="w-3 h-3" />
+              <span>Lock Terminal</span>
+            </button>
+          )}
+        </div>
+
+        <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl p-4 sm:p-5 space-y-4">
+          {/* Biometric Toggle */}
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
                 <Fingerprint className="w-5 h-5" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white">{getTranslation(lang, 'biometricAuth')}</div>
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>{getTranslation(lang, 'biometricAuth')}</span>
+                  {settings.biometricEnabled && (
+                    <span className="px-1.5 py-0.2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold uppercase rounded">
+                      Active ✓
+                    </span>
+                  )}
+                </div>
                 <div className="text-xs text-zinc-400 mt-0.5">
-                  {getTranslation(lang, 'biometricSub')}
+                  Touch your phone’s fingerprint sensor or platform authenticator to authorize actions and unlock Merchant X.
                 </div>
               </div>
             </div>
@@ -516,8 +575,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <button
               type="button"
               onClick={handleToggleBiometric}
-              disabled={biometricSupported === false}
-              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
                 settings.biometricEnabled ? 'bg-amber-500' : 'bg-zinc-700'
               }`}
             >
@@ -529,12 +587,73 @@ export const Settings: React.FC<SettingsProps> = ({
             </button>
           </div>
 
-          {biometricSupported === false && (
-            <div className="p-2.5 bg-zinc-900 border border-zinc-800 rounded-xl text-[11px] text-zinc-400 flex items-center gap-2">
-              <AlertCircle className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-              <span>Biometric authentication is not available on this device.</span>
+          {/* Test Fingerprint Sensor Button */}
+          {settings.biometricEnabled && (
+            <div className="pt-2 border-t border-zinc-800/60 space-y-2">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBiometricTestModal(true)}
+                  className="flex-1 py-2.5 px-3 bg-purple-950/30 hover:bg-purple-900/40 border border-purple-800/50 text-purple-200 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Fingerprint className="w-4 h-4 text-purple-400" />
+                  <span>Test Phone Fingerprint Sensor</span>
+                </button>
+
+                {onLockTerminal && (
+                  <button
+                    type="button"
+                    onClick={onLockTerminal}
+                    className="py-2.5 px-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Lock Terminal Now</span>
+                  </button>
+                )}
+              </div>
+
+              {testSuccessMessage && (
+                <div className="p-2 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{testSuccessMessage}</span>
+                </div>
+              )}
             </div>
           )}
+
+          {/* Backup Terminal Security PIN */}
+          <div className="pt-3 border-t border-zinc-800/60 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                <span>Backup Terminal Passcode / PIN</span>
+              </label>
+              <span className="text-[10px] text-zinc-500">Optional fallback</span>
+            </div>
+            <form onSubmit={handleSavePin} className="flex gap-2">
+              <input
+                type="password"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                maxLength={8}
+                placeholder="Set 4-8 digit emergency PIN"
+                value={terminalPinInput}
+                onChange={(e) => setTerminalPinInput(e.target.value)}
+                className="flex-1 bg-[#0d0e14] border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono tracking-widest"
+              />
+              <button
+                type="submit"
+                className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Save PIN
+              </button>
+            </form>
+            {savedPinNotice && (
+              <div className="text-[11px] text-emerald-400 font-medium">
+                ✓ Terminal backup PIN saved successfully.
+              </div>
+            )}
+          </div>
 
           {biometricError && (
             <div className="p-2.5 bg-red-950/40 border border-red-800/60 rounded-xl text-[11px] text-red-300">
@@ -645,6 +764,17 @@ export const Settings: React.FC<SettingsProps> = ({
       {/* Modals */}
       <PrivacyPolicyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
       <TermsOfServiceModal isOpen={showTerms} onClose={() => setShowTerms(false)} />
+      <BiometricModal
+        isOpen={showBiometricTestModal}
+        onClose={() => setShowBiometricTestModal(false)}
+        onSuccess={() => {
+          setShowBiometricTestModal(false);
+          setTestSuccessMessage('Fingerprint sensor test successful! Biometric authentication is working perfectly.');
+          setTimeout(() => setTestSuccessMessage(null), 5000);
+        }}
+        title="Test Fingerprint Sensor"
+        subtitle="Touch your phone’s fingerprint sensor to test authentication"
+      />
     </div>
   );
 };

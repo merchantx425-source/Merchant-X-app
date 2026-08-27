@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { CryptoAsset, WalletState } from '../types/merchant';
 import { formatAddress } from '../services/blockchainService';
-import { Radio, CheckCircle, RefreshCw, X, Zap } from 'lucide-react';
+import { Radio, CheckCircle, RefreshCw, X, Zap, Lock, Fingerprint } from 'lucide-react';
 
 interface NotificationBarProps {
   walletState: WalletState;
@@ -9,6 +9,8 @@ interface NotificationBarProps {
   ratesError?: string | null;
   onRefreshRates?: () => void;
   isRefreshingBalances?: boolean;
+  biometricEnabled?: boolean;
+  onLockTerminal?: () => void;
 }
 
 export const NotificationBar: React.FC<NotificationBarProps> = ({
@@ -17,6 +19,8 @@ export const NotificationBar: React.FC<NotificationBarProps> = ({
   ratesError,
   onRefreshRates,
   isRefreshingBalances,
+  biometricEnabled,
+  onLockTerminal,
 }) => {
   const [isVisible, setIsVisible] = useState(true);
 
@@ -61,6 +65,18 @@ export const NotificationBar: React.FC<NotificationBarProps> = ({
 
         {/* Right Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {biometricEnabled && onLockTerminal && (
+            <button
+              type="button"
+              onClick={onLockTerminal}
+              className="px-2 py-0.5 bg-purple-950/40 hover:bg-purple-900/50 border border-purple-800/40 text-purple-300 rounded-md transition-colors cursor-pointer flex items-center gap-1 text-[10px] font-semibold"
+              title="Lock Terminal with Biometrics"
+            >
+              <Fingerprint className="w-2.5 h-2.5 text-purple-400" />
+              <span className="hidden sm:inline">Lock</span>
+            </button>
+          )}
+
           {onRefreshRates && (
             <button
               type="button"
