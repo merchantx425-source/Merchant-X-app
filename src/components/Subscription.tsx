@@ -350,7 +350,7 @@ export const Subscription: React.FC<SubscriptionProps> = ({
                 </li>
                 <li className="flex items-start gap-1.5 text-zinc-200">
                   <span className="text-amber-400 font-black">✓</span>
-                  <span>Lowest network fees</span>
+                  <span>Instant direct wallet settlement</span>
                 </li>
               </ul>
             </div>

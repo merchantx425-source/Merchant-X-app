@@ -552,6 +552,16 @@ export default function App() {
     setActiveTab('pos');
   };
 
+  // Clear All Transactions Handler
+  const handleClearAllTransactions = () => {
+    setTransactions([]);
+    try {
+      localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
+    } catch {
+      // Ignore
+    }
+  };
+
   // Export Transactions helper for Settings screen (Official PDF Statement)
   const handleExportTransactions = () => {
     if (transactions.length === 0) return;
@@ -639,6 +649,7 @@ export default function App() {
           <TransactionHistory
             transactions={transactions}
             onSelectReceipt={(tx) => setActiveReceiptTx(tx)}
+            onClearHistory={handleClearAllTransactions}
             language={settings.language}
             settings={settings}
             isPro={isPro}

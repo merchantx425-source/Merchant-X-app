@@ -23,6 +23,8 @@ import {
   ArrowUpRight,
   DollarSign,
   Percent,
+  Trash2,
+  X,
 } from 'lucide-react';
 
 interface TransactionHistoryProps {
@@ -41,6 +43,7 @@ type FilterOption = 'ALL' | TxStatus | CryptoAsset;
 export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   transactions,
   onSelectReceipt,
+  onClearHistory,
   language = 'en',
   settings,
   isPro = false,
@@ -51,6 +54,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const [selectedFilter, setSelectedFilter] = useState<FilterOption>('ALL');
   const [inspectedTx, setInspectedTx] = useState<TransactionRecord | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Filter and search logic
   const filteredTransactions = useMemo(() => {
@@ -285,6 +289,20 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             <FileSpreadsheet className="w-3.5 h-3.5 text-amber-400" />
             <span>CSV</span>
           </button>
+
+          {/* Delete All Transactions Button */}
+          {onClearHistory && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteModal(true)}
+              disabled={transactions.length === 0}
+              className="flex items-center gap-1.5 py-2 px-3 bg-red-950/40 hover:bg-red-900/60 disabled:opacity-40 disabled:pointer-events-none border border-red-800/60 rounded-xl text-xs font-bold text-red-300 hover:text-red-200 transition-colors cursor-pointer"
+              title="Delete all transactions history"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-red-400" />
+              <span className="hidden sm:inline">Delete All</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -612,6 +630,49 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
               >
                 <ReceiptIcon className="w-4 h-4" />
                 <span>{getTranslation(language, 'officialReceipt')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete All Transactions Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-sm bg-[#141622] border border-red-500/40 rounded-3xl p-6 shadow-2xl text-center space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center mx-auto text-red-400">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold font-display text-white">Delete All Transactions?</h3>
+              <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                This will permanently delete all <strong className="text-white">{transactions.length}</strong> recorded on-chain transaction{transactions.length === 1 ? '' : 's'} and ledger history from this terminal.
+              </p>
+            </div>
+
+            <div className="p-3 bg-red-950/30 border border-red-900/50 rounded-xl text-[11px] text-red-300 flex items-center gap-2 text-left">
+              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              <span>This action cannot be undone. Make sure you downloaded your PDF statement or CSV if needed.</span>
+            </div>
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onClearHistory?.();
+                  setShowDeleteModal(false);
+                }}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer shadow-lg shadow-red-600/30"
+              >
+                Delete All
               </button>
             </div>
           </div>

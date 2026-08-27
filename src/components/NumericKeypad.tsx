@@ -42,27 +42,27 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
 
   return (
     <div className="w-full flex flex-col gap-2">
-      {/* 4x3 Grid Keypad */}
+      {/* 4x3 Grid Keypad with thick dark purple edges */}
       <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
         {/* Row 1 */}
         <button
           type="button"
           onClick={() => handleKeyClick('1')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           1
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('2')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           2
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('3')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           3
         </button>
@@ -71,21 +71,21 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
         <button
           type="button"
           onClick={() => handleKeyClick('4')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           4
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('5')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           5
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('6')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           6
         </button>
@@ -94,21 +94,21 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
         <button
           type="button"
           onClick={() => handleKeyClick('7')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           7
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('8')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           8
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('9')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           9
         </button>
@@ -117,21 +117,21 @@ export const NumericKeypad: React.FC<NumericKeypadProps> = ({
         <button
           type="button"
           onClick={() => handleKeyClick('.')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-zinc-300 shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-zinc-300 shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           .
         </button>
         <button
           type="button"
           onClick={() => handleKeyClick('0')}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
         >
           0
         </button>
         <button
           type="button"
           onClick={handleDelete}
-          className="keypad-btn h-11 sm:h-12 bg-[#151722] hover:bg-[#1f2230] active:bg-[#282c3e] border border-zinc-800 rounded-xl sm:rounded-2xl flex items-center justify-center text-zinc-400 hover:text-red-400 shadow-sm cursor-pointer transition-all active:scale-[0.97]"
+          className="keypad-btn h-11 sm:h-12 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 sm:border-[2.5px] border-purple-900 hover:border-purple-700 active:border-purple-500 rounded-xl sm:rounded-2xl flex items-center justify-center text-zinc-400 hover:text-red-400 shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-[0.97]"
           title="Delete last digit"
         >
           <Delete className="w-5 h-5 sm:w-6 sm:h-6" />

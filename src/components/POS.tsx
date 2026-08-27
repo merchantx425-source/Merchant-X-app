@@ -235,78 +235,80 @@ export const POS: React.FC<POSProps> = ({
         </div>
       )}
 
-      {/* 2. Amount Display Area (Compact & Centered) */}
-      <section className="flex flex-col items-center justify-center py-2 sm:py-3 text-center my-auto">
-        <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-0.5 font-mono">
-          {getTranslation(lang, 'enterAmount')}
-        </div>
+      {/* 2. Amount Display Area (Box with thick dark purple edges) */}
+      <section className="my-auto py-1 sm:py-2 w-full">
+        <div className="w-full bg-[#12131e]/90 border-2 sm:border-[2.5px] border-purple-900 rounded-2xl p-2.5 sm:p-3 shadow-lg shadow-purple-950/40 flex flex-col items-center justify-center text-center">
+          <div className="text-[10px] font-bold uppercase tracking-widest text-zinc-400 mb-0.5 font-mono">
+            {getTranslation(lang, 'enterAmount')}
+          </div>
 
-        {/* Large Fiat Amount */}
-        <div className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-white break-all px-2 transition-all">
-          {formattedFiatDisplay}
-        </div>
+          {/* Large Fiat Amount */}
+          <div className="text-3xl sm:text-4xl md:text-5xl font-extrabold font-display tracking-tight text-white break-all px-2 transition-all">
+            {formattedFiatDisplay}
+          </div>
 
-        {/* Real Live Market Price & Calculated Payment */}
-        <div className="mt-1 space-y-0.5">
-          {ratesError ? (
-            <div className="flex items-center justify-center gap-1.5 text-xs text-red-400">
-              <span>Unable to load current price</span>
-              {onRefreshRates && (
-                <button
-                  type="button"
-                  onClick={onRefreshRates}
-                  className="underline text-amber-400 hover:text-amber-300 cursor-pointer"
-                >
-                  Retry
-                </button>
-              )}
-            </div>
-          ) : (
-            <>
-              {/* Market Price per Asset */}
-              <div className="flex items-center justify-center gap-2 text-[10px] sm:text-[11px] text-zinc-400 font-medium">
-                <span>
-                  {selectedAsset} market price:{' '}
-                  <span className="text-zinc-100 font-mono font-semibold">
-                    {formatCryptoMarketPrice(marketPrice, settings.fiatCurrency, selectedAsset)} / {selectedAsset}
-                  </span>
-                </span>
+          {/* Real Live Market Price & Calculated Payment */}
+          <div className="mt-1 space-y-0.5 w-full">
+            {ratesError ? (
+              <div className="flex items-center justify-center gap-1.5 text-xs text-red-400">
+                <span>Unable to load current price</span>
                 {onRefreshRates && (
                   <button
                     type="button"
                     onClick={onRefreshRates}
-                    className="inline-flex items-center gap-1 text-[9px] text-zinc-500 hover:text-amber-400 transition-colors cursor-pointer"
-                    title="Refresh market price"
+                    className="underline text-amber-400 hover:text-amber-300 cursor-pointer"
                   >
-                    <RefreshCw className="w-2.5 h-2.5" />
-                    <span>{lastRatesUpdated ? new Date(lastRatesUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live'}</span>
+                    Retry
                   </button>
                 )}
               </div>
+            ) : (
+              <>
+                {/* Market Price per Asset */}
+                <div className="flex items-center justify-center gap-2 text-[10px] sm:text-[11px] text-zinc-400 font-medium">
+                  <span>
+                    {selectedAsset} market price:{' '}
+                    <span className="text-zinc-100 font-mono font-semibold">
+                      {formatCryptoMarketPrice(marketPrice, settings.fiatCurrency, selectedAsset)} / {selectedAsset}
+                    </span>
+                  </span>
+                  {onRefreshRates && (
+                    <button
+                      type="button"
+                      onClick={onRefreshRates}
+                      className="inline-flex items-center gap-1 text-[9px] text-zinc-500 hover:text-amber-400 transition-colors cursor-pointer"
+                      title="Refresh market price"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      <span>{lastRatesUpdated ? new Date(lastRatesUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'Live'}</span>
+                    </button>
+                  )}
+                </div>
 
-              {/* Calculated Customer Payment Amount */}
-              <div className="flex items-center justify-center gap-1.5 text-xs sm:text-sm font-mono text-amber-400 font-bold">
-                <span>Customer payment amount:</span>
-                <span>
-                  {formatCryptoAmount(estimatedCryptoAmount, selectedAsset)} {selectedAsset}
-                </span>
+                {/* Calculated Customer Payment Amount */}
+                <div className="flex items-center justify-center gap-1.5 text-xs sm:text-sm font-mono text-amber-400 font-bold">
+                  <span>Customer payment amount:</span>
+                  <span>
+                    {formatCryptoAmount(estimatedCryptoAmount, selectedAsset)} {selectedAsset}
+                  </span>
+                </div>
+              </>
+            )}
+
+            {/* BTC Address Reminder if BTC is selected but no Bitcoin address configured */}
+            {selectedAsset === 'BTC' && !walletState.btcAddress && !settings.customBtcReceivingAddress && (
+              <div className="mt-1 inline-flex items-center justify-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] text-amber-300">
+                <span>No BTC address configured.</span>
+                <button
+                  type="button"
+                  onClick={onOpenWalletModal}
+                  className="font-bold underline text-amber-400 hover:text-amber-300 cursor-pointer"
+                >
+                  Link BTC Address
+                </button>
               </div>
-            </>
-          )}
-
-          {/* BTC Address Reminder if BTC is selected but no Bitcoin address configured */}
-          {selectedAsset === 'BTC' && !walletState.btcAddress && !settings.customBtcReceivingAddress && (
-            <div className="mt-1 inline-flex items-center justify-center gap-1.5 px-2 py-0.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-[10px] text-amber-300">
-              <span>No BTC address configured.</span>
-              <button
-                type="button"
-                onClick={onOpenWalletModal}
-                className="font-bold underline text-amber-400 hover:text-amber-300 cursor-pointer"
-              >
-                Link BTC Address
-              </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </section>
 
