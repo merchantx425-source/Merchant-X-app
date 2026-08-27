@@ -122,12 +122,12 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'USD'): Promise<
 
   // Baseline standard USD prices (used as sensible starting values)
   const defaultUsdRates: Record<CryptoAsset, number> = {
-    BTC: 64500.0,
-    ETH: 3150.0,
+    BTC: 80000.0,
+    ETH: 2500.0,
     USDT: 1.0,
     USDC: 1.0,
-    POL: 0.42,
-    VERSE: 0.000018, // Official Verse market rate
+    POL: 0.11,
+    VERSE: 0.000022, // Official Verse market rate
   };
 
   const defaultFiatToUsd: Record<FiatCurrency, number> = {
@@ -191,7 +191,7 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'USD'): Promise<
     const cgController = new AbortController();
     const cgTimer = setTimeout(() => cgController.abort(), 4000);
     const cgRes = await fetch(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,usd-coin,polygon-ecosystem-token,matic-network,verse-token,verse&vs_currencies=usd',
+      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,tether,usd-coin,polygon-ecosystem-token,matic-network,verse-bitcoin,verse-token,verse&vs_currencies=usd',
       { headers: { Accept: 'application/json' }, signal: cgController.signal }
     ).then((r) => (r.ok ? r.json() : null));
     clearTimeout(cgTimer);
@@ -206,7 +206,9 @@ export async function fetchLiveCryptoRates(fiat: FiatCurrency = 'USD'): Promise<
       } else if (cgRes['matic-network']?.usd && cgRes['matic-network'].usd > 0) {
         polUsd = cgRes['matic-network'].usd;
       }
-      if (cgRes['verse-token']?.usd && cgRes['verse-token'].usd > 0) {
+      if (cgRes['verse-bitcoin']?.usd && cgRes['verse-bitcoin'].usd > 0) {
+        verseUsd = cgRes['verse-bitcoin'].usd;
+      } else if (cgRes['verse-token']?.usd && cgRes['verse-token'].usd > 0) {
         verseUsd = cgRes['verse-token'].usd;
       } else if (cgRes.verse?.usd && cgRes.verse.usd > 0) {
         verseUsd = cgRes.verse.usd;

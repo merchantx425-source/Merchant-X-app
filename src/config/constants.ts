@@ -12,7 +12,7 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     decimals: 18,
     // Official Polygon fxVERSE ERC-20 contract (0xc708D6F2153933DAA50B2D0758955Be0A...)
     contractAddress: '0xc708d6f2153933daa50b2d0758955be0a93a8fec',
-    coingeckoId: 'verse-token',
+    coingeckoId: 'verse-bitcoin',
     iconColor: '#00D2FF',
     badge: 'Polygon',
   },
@@ -22,7 +22,7 @@ export const SUPPORTED_ASSETS: Record<CryptoAsset, CryptoAssetConfig> = {
     network: 'Polygon',
     networkFamily: 'evm',
     decimals: 18,
-    coingeckoId: 'matic-network',
+    coingeckoId: 'polygon-ecosystem-token',
     iconColor: '#8247E5',
     badge: 'Polygon',
   },
