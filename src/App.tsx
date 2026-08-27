@@ -561,6 +561,19 @@ export default function App() {
     setActiveTab('pos');
   };
 
+  // Delete Single Transaction Handler
+  const handleDeleteTransaction = (txId: string) => {
+    setTransactions((prev) => {
+      const updated = prev.filter((t) => t.id !== txId);
+      try {
+        localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(updated));
+      } catch {
+        // Ignore
+      }
+      return updated;
+    });
+  };
+
   // Clear All Transactions Handler
   const handleClearAllTransactions = () => {
     setTransactions([]);
@@ -659,6 +672,7 @@ export default function App() {
             transactions={transactions}
             onSelectReceipt={(tx) => setActiveReceiptTx(tx)}
             onClearHistory={handleClearAllTransactions}
+            onDeleteTransaction={handleDeleteTransaction}
             language={settings.language}
             settings={settings}
             isPro={isPro}

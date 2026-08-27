@@ -144,13 +144,13 @@ export async function registerBiometricPasskey(
           displayName: merchantName || 'Merchant X Terminal',
         },
         pubKeyCredParams: [
-          { alg: -7, type: 'public-key' }, // ES256 (Standard Android/iOS)
+          { alg: -7, type: 'public-key' }, // ES256 (Standard Android Fingerprint / Touch ID)
           { alg: -257, type: 'public-key' }, // RS256
           { alg: -8, type: 'public-key' }, // Ed25519
         ],
         authenticatorSelection: {
-          authenticatorAttachment: 'platform', // Enforces on-device biometric sensor (Fingerprint, TouchID, FaceID)
-          userVerification: 'preferred', // Allows seamless phone fingerprint or PIN fallback
+          authenticatorAttachment: 'platform', // Enforces on-device biometric sensor
+          userVerification: 'required', // Enforces real biometric sensor prompt
           residentKey: 'preferred',
           requireResidentKey: false,
         },
@@ -172,34 +172,26 @@ export async function registerBiometricPasskey(
     } catch (err: any) {
       console.warn('[Biometric] WebAuthn create notice:', err);
       if (err.name === 'NotAllowedError') {
-        throw new Error('Biometric setup was dismissed. Please touch your phone’s fingerprint sensor when prompted.');
+        throw new Error('Biometric setup was cancelled. Please touch your phone’s fingerprint sensor when prompted.');
       }
-      if (err.name === 'SecurityError') {
-        // Fallback to on-device touch registration
-        localStorage.setItem(STORAGE_KEYS.IS_ENABLED, 'true');
-        triggerBiometricHaptic('success');
-        return { success: true, isWebAuthn: false };
-      }
+      throw new Error(err.message || 'Failed to setup hardware biometric credential.');
     }
   }
 
-  // Mobile touch fallback registration
-  localStorage.setItem(STORAGE_KEYS.IS_ENABLED, 'true');
-  triggerBiometricHaptic('success');
-  return { success: true, isWebAuthn: false };
+  throw new Error('Hardware biometric passkey is not supported on this browser/device.');
 }
 
 /**
  * Verify Biometric / Fingerprint Authentication
- * Triggers native phone biometric sensor prompt, or validates interactive touch
+ * Triggers native phone biometric sensor prompt (Android Fingerprint / Touch ID / Passkey)
  */
 export async function verifyBiometricAuth(options?: {
   promptTitle?: string;
   forceWebAuthn?: boolean;
-}): Promise<{ success: boolean; method: 'webauthn' | 'touch_sensor' | 'pin'; error?: string }> {
+}): Promise<{ success: boolean; method: 'webauthn' | 'pin'; error?: string }> {
   triggerBiometricHaptic('scan');
 
-  // 1. Attempt Native Platform WebAuthn Biometrics
+  // Attempt Native Platform WebAuthn Biometrics
   if (
     typeof window !== 'undefined' &&
     window.PublicKeyCredential &&
@@ -216,8 +208,8 @@ export async function verifyBiometricAuth(options?: {
       if (savedCredId && navigator.credentials.get) {
         const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
           challenge,
-          timeout: 45000,
-          userVerification: 'preferred',
+          timeout: 60000,
+          userVerification: 'required',
           rpId: isLocal ? undefined : hostname,
           allowCredentials: [
             {
@@ -237,27 +229,23 @@ export async function verifyBiometricAuth(options?: {
           return { success: true, method: 'webauthn' };
         }
       } else if (navigator.credentials.create) {
-        // If not registered yet, invoke platform authenticator registration directly
+        // If credential ID was not cached, register / prompt platform authenticator directly
         const regRes = await registerBiometricPasskey('Merchant Terminal');
         if (regRes.success) {
           triggerBiometricHaptic('success');
-          return { success: true, method: regRes.isWebAuthn ? 'webauthn' : 'touch_sensor' };
+          return { success: true, method: 'webauthn' };
         }
       }
     } catch (err: any) {
       console.warn('[Biometric] WebAuthn verify prompt notice:', err);
       if (err.name === 'NotAllowedError') {
-        throw new Error('Biometric prompt dismissed. Touch sensor again or enter your PIN.');
+        throw new Error('Biometric verification cancelled. Please touch your phone’s fingerprint sensor again or enter your PIN.');
       }
-      if (options?.forceWebAuthn) {
-        throw new Error(err.message || 'Biometric verification failed.');
-      }
+      throw new Error(err.message || 'Fingerprint verification failed. Please try again or use your PIN.');
     }
   }
 
-  // 2. Interactive on-screen touch sensor validation
-  triggerBiometricHaptic('success');
-  return { success: true, method: 'touch_sensor' };
+  throw new Error('Hardware biometric sensor is not available on this browser. Please use your PIN code.');
 }
 
 /**
@@ -266,15 +254,11 @@ export async function verifyBiometricAuth(options?: {
 export function isBiometricEnabledState(): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const rawActive = localStorage.getItem(STORAGE_KEYS.IS_ENABLED);
-    if (rawActive === 'true') return true;
-    if (rawActive === 'false') return false;
-
-    // Check settings JSON
+    // Check settings JSON as single source of truth
     const settingsRaw = localStorage.getItem('merchant_x_settings_v1');
     if (settingsRaw) {
       const parsed = JSON.parse(settingsRaw);
-      if (parsed?.biometricEnabled === true) return true;
+      return parsed?.biometricEnabled === true;
     }
   } catch {
     // Ignore
@@ -284,7 +268,13 @@ export function isBiometricEnabledState(): boolean {
 
 export function setBiometricEnabledState(enabled: boolean): void {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEYS.IS_ENABLED, enabled ? 'true' : 'false');
+  if (enabled) {
+    localStorage.setItem(STORAGE_KEYS.IS_ENABLED, 'true');
+  } else {
+    localStorage.removeItem(STORAGE_KEYS.IS_ENABLED);
+    localStorage.removeItem(STORAGE_KEYS.CREDENTIAL_ID);
+    localStorage.removeItem(STORAGE_KEYS.CREDENTIAL_RAW);
+  }
 }
 
 export function hasStoredTerminalPin(): boolean {
@@ -295,7 +285,9 @@ export function hasStoredTerminalPin(): boolean {
 
 export function getStoredTerminalPin(): string | null {
   if (typeof window === 'undefined') return null;
-  return localStorage.getItem(STORAGE_KEYS.PIN_CODE);
+  const pin = localStorage.getItem(STORAGE_KEYS.PIN_CODE);
+  if (!pin || pin.trim().length < 4) return null;
+  return pin.trim();
 }
 
 export function setStoredTerminalPin(pin: string): void {

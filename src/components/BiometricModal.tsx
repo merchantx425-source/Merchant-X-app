@@ -50,12 +50,17 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
+      const biometricActive = isBiometricEnabledState();
+      const hasPin = hasStoredTerminalPin();
+
+      if (!biometricActive && !hasPin) {
+        onSuccess();
+        return;
+      }
+
       setStatus('idle');
       setErrorMessage(null);
       setEnteredPin('');
-
-      const biometricActive = isBiometricEnabledState();
-      const hasPin = hasStoredTerminalPin();
 
       // If biometric is active: start in fingerprint view
       // If biometric is NOT active but PIN is set: start directly in PIN view
@@ -74,7 +79,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
         return () => clearTimeout(timer);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, onSuccess]);
 
   // Trigger Phone Biometric WebAuthn
   const handleTriggerBiometric = useCallback(async () => {

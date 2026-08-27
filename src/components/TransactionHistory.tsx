@@ -31,6 +31,7 @@ interface TransactionHistoryProps {
   transactions: TransactionRecord[];
   onSelectReceipt: (tx: TransactionRecord) => void;
   onClearHistory?: () => void;
+  onDeleteTransaction?: (txId: string) => void;
   language?: string;
   settings?: AppSettings;
   isPro?: boolean;
@@ -44,6 +45,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   transactions,
   onSelectReceipt,
   onClearHistory,
+  onDeleteTransaction,
   language = 'en',
   settings,
   isPro = false,
@@ -55,6 +57,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const [inspectedTx, setInspectedTx] = useState<TransactionRecord | null>(null);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [txToDelete, setTxToDelete] = useState<TransactionRecord | null>(null);
 
   // Filter and search logic
   const filteredTransactions = useMemo(() => {
@@ -290,21 +293,21 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             <span>CSV</span>
           </button>
 
-          {/* Delete All Transactions Button */}
-          {onClearHistory && (
-            <button
-              type="button"
-              onClick={() => setShowDeleteModal(true)}
-              disabled={transactions.length === 0}
-              className="flex items-center gap-1.5 py-2 px-3 bg-red-950/40 hover:bg-red-900/60 disabled:opacity-40 disabled:pointer-events-none border border-red-800/60 rounded-xl text-xs font-bold text-red-300 hover:text-red-200 transition-colors cursor-pointer"
-              title="Delete all transactions history"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-red-400" />
-              <span className="hidden sm:inline">Delete All</span>
-            </button>
-          )}
+            {/* Delete All Transactions Button */}
+            {onClearHistory && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(true)}
+                disabled={transactions.length === 0}
+                className="flex items-center gap-1.5 py-2 px-3 bg-red-950/50 hover:bg-red-900/80 disabled:opacity-40 disabled:pointer-events-none border border-red-800/80 rounded-xl text-xs font-bold text-red-300 hover:text-red-100 transition-all cursor-pointer shrink-0 active:scale-95"
+                title="Delete all transactions history"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                <span>Delete All</span>
+              </button>
+            )}
+          </div>
         </div>
-      </div>
 
       {/* VIEW 1: ANALYTICS DASHBOARD */}
       {viewMode === 'analytics' && (
@@ -526,14 +529,31 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                       </div>
                     </div>
 
-                    {/* Right Side Amount */}
-                    <div className="text-right shrink-0">
-                      <div className="font-extrabold text-sm sm:text-base font-display text-white">
-                        {formattedFiat}
+                    {/* Right Side Amount & Actions */}
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <div className="text-right">
+                        <div className="font-extrabold text-sm sm:text-base font-display text-white">
+                          {formattedFiat}
+                        </div>
+                        <div className="text-xs font-mono text-amber-400 font-medium">
+                          {formattedCrypto}
+                        </div>
                       </div>
-                      <div className="text-xs font-mono text-amber-400 font-medium">
-                        {formattedCrypto}
-                      </div>
+
+                      {/* Quick Delete Single Transaction Button */}
+                      {onDeleteTransaction && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTxToDelete(tx);
+                          }}
+                          className="p-2 text-zinc-500 hover:text-red-400 hover:bg-red-950/40 rounded-xl border border-transparent hover:border-red-800/40 transition-all cursor-pointer"
+                          title="Delete this transaction record"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -626,10 +646,66 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                   setInspectedTx(null);
                   onSelectReceipt(tx);
                 }}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                className="flex-1 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
               >
                 <ReceiptIcon className="w-4 h-4" />
                 <span>{getTranslation(language, 'officialReceipt')}</span>
+              </button>
+
+              {onDeleteTransaction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const tx = inspectedTx;
+                    setInspectedTx(null);
+                    setTxToDelete(tx);
+                  }}
+                  className="py-3 px-4 bg-red-950/60 hover:bg-red-900/80 border border-red-800/60 text-red-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  title="Delete this transaction"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400" />
+                  <span className="hidden sm:inline">Delete</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Single Transaction Confirmation Modal */}
+      {txToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="relative w-full max-w-sm bg-[#141622] border border-red-500/40 rounded-3xl p-6 shadow-2xl text-center space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-2xl bg-red-500/20 border border-red-500/40 flex items-center justify-center mx-auto text-red-400">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold font-display text-white">Delete Transaction?</h3>
+              <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                Are you sure you want to delete transaction <strong className="text-amber-400 font-mono">{txToDelete.reference}</strong> ({SUPPORTED_FIAT[txToDelete.fiatCurrency].symbol}{txToDelete.amountFiat.toLocaleString()})?
+              </p>
+            </div>
+
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={() => setTxToDelete(null)}
+                className="flex-1 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (txToDelete) {
+                    onDeleteTransaction?.(txToDelete.id);
+                    setTxToDelete(null);
+                  }
+                }}
+                className="flex-1 py-3 bg-red-600 hover:bg-red-500 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-colors cursor-pointer shadow-lg shadow-red-600/30"
+              >
+                Delete
               </button>
             </div>
           </div>
