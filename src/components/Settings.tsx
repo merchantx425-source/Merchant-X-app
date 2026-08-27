@@ -9,6 +9,8 @@ import {
   triggerBiometricHaptic,
   getStoredTerminalPin,
   setStoredTerminalPin,
+  setBiometricEnabledState,
+  hasStoredTerminalPin,
 } from '../services/biometricService';
 import { getTranslation } from '../config/i18n';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
@@ -112,6 +114,7 @@ export const Settings: React.FC<SettingsProps> = ({
     if (!settings.biometricEnabled) {
       try {
         await registerBiometricPasskey(settings.merchantName);
+        setBiometricEnabledState(true);
         onUpdateSettings({ biometricEnabled: true });
         setTestSuccessMessage('Biometric fingerprint registered successfully!');
         setTimeout(() => setTestSuccessMessage(null), 4000);
@@ -119,6 +122,7 @@ export const Settings: React.FC<SettingsProps> = ({
         setBiometricError(err.message || 'Failed to enable biometric authentication.');
       }
     } else {
+      setBiometricEnabledState(false);
       onUpdateSettings({ biometricEnabled: false });
     }
   };
@@ -126,9 +130,27 @@ export const Settings: React.FC<SettingsProps> = ({
   // Save Terminal PIN
   const handleSavePin = (e: React.FormEvent) => {
     e.preventDefault();
-    setStoredTerminalPin(terminalPinInput.trim());
+    const cleanPin = terminalPinInput.trim();
+    if (!cleanPin) {
+      setStoredTerminalPin('');
+      setTerminalPinInput('');
+      setSavedPinNotice(true);
+      triggerBiometricHaptic('tap');
+      setTimeout(() => setSavedPinNotice(false), 3000);
+      return;
+    }
+    setStoredTerminalPin(cleanPin);
     setSavedPinNotice(true);
     triggerBiometricHaptic('success');
+    setTimeout(() => setSavedPinNotice(false), 3000);
+  };
+
+  // Remove PIN
+  const handleClearPin = () => {
+    setStoredTerminalPin('');
+    setTerminalPinInput('');
+    setSavedPinNotice(true);
+    triggerBiometricHaptic('tap');
     setTimeout(() => setSavedPinNotice(false), 3000);
   };
 
@@ -626,9 +648,16 @@ export const Settings: React.FC<SettingsProps> = ({
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
                 <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                <span>Backup Terminal Passcode / PIN</span>
+                <span>Security PIN Code</span>
+                {hasStoredTerminalPin() && (
+                  <span className="px-1.5 py-0.2 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[9px] font-bold uppercase rounded">
+                    Active ✓
+                  </span>
+                )}
               </label>
-              <span className="text-[10px] text-zinc-500">Optional fallback</span>
+              <span className="text-[10px] text-zinc-500">
+                {hasStoredTerminalPin() ? 'PIN Configured' : 'Optional lock code'}
+              </span>
             </div>
             <form onSubmit={handleSavePin} className="flex gap-2">
               <input
@@ -636,7 +665,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 inputMode="numeric"
                 pattern="[0-9]*"
                 maxLength={8}
-                placeholder="Set 4-8 digit emergency PIN"
+                placeholder="Enter 4-8 digit PIN"
                 value={terminalPinInput}
                 onChange={(e) => setTerminalPinInput(e.target.value)}
                 className="flex-1 bg-[#0d0e14] border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono tracking-widest"
@@ -647,14 +676,28 @@ export const Settings: React.FC<SettingsProps> = ({
               >
                 Save PIN
               </button>
+              {hasStoredTerminalPin() && (
+                <button
+                  type="button"
+                  onClick={handleClearPin}
+                  className="px-3 py-2 bg-red-950/40 hover:bg-red-900/60 border border-red-800/50 text-red-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer"
+                  title="Remove PIN"
+                >
+                  Clear
+                </button>
+              )}
             </form>
             {savedPinNotice && (
               <div className="flex items-center justify-between p-2 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-[11px] text-emerald-300">
                 <div className="flex items-center gap-1.5 font-medium">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>✓ Terminal security PIN saved.</span>
+                  <span>
+                    {hasStoredTerminalPin()
+                      ? '✓ Terminal security PIN saved.'
+                      : '✓ Security PIN removed.'}
+                  </span>
                 </div>
-                {onLockTerminal && (
+                {hasStoredTerminalPin() && onLockTerminal && (
                   <button
                     type="button"
                     onClick={onLockTerminal}

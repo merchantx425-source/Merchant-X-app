@@ -6,6 +6,7 @@ import { formatAddress } from '../../services/blockchainService';
 import {
   isBiometricAvailable,
   registerBiometricPasskey,
+  setBiometricEnabledState,
 } from '../../services/biometricService';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { TermsOfServiceModal } from './TermsOfServiceModal';
@@ -67,11 +68,13 @@ export const SettingsView: React.FC = () => {
     if (!settings.biometricEnabled) {
       try {
         await registerBiometricPasskey(settings.merchantName);
+        setBiometricEnabledState(true);
         updateSettings({ biometricEnabled: true });
       } catch (err: any) {
         setBiometricError(err.message || 'Failed to setup biometric authentication.');
       }
     } else {
+      setBiometricEnabledState(false);
       updateSettings({ biometricEnabled: false });
     }
   };

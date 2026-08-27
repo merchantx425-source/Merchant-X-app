@@ -34,6 +34,10 @@ import { ChargeFlowModal } from './components/ChargeFlowModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { BiometricModal } from './components/BiometricModal';
+import {
+  isBiometricEnabledState,
+  hasStoredTerminalPin,
+} from './services/biometricService';
 
 const STORAGE_KEYS = {
   SETTINGS: 'merchant_x_settings_v1',
@@ -46,20 +50,12 @@ export default function App() {
   // 1. Initial Loading Animation State
   const [isLoadingApp, setIsLoadingApp] = useState(true);
 
-  // Terminal Lock Screen State for Biometrics & PIN
+  // Terminal Lock Screen State for Biometrics & PIN:
+  // - ONLY if biometric authentication is on, it locks on reload (shows fingerprint)
+  // - ONLY if pin is set, it locks on reload (shows pin)
+  // - If neither is set, does NOT show after reload
   const [isTerminalLocked, setIsTerminalLocked] = useState<boolean>(() => {
-    try {
-      const savedPin = localStorage.getItem('merchant_x_terminal_pin_v1');
-      const biometricActive = localStorage.getItem('merchant_x_biometric_active_v1') === 'true';
-      const savedSettings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      const parsedSettings = savedSettings ? JSON.parse(savedSettings) : null;
-      if (savedPin || biometricActive || parsedSettings?.biometricEnabled) {
-        return true;
-      }
-    } catch {
-      // Fallback
-    }
-    return false;
+    return isBiometricEnabledState() || hasStoredTerminalPin();
   });
 
   // 2. Active Screen Tab
@@ -762,8 +758,6 @@ export default function App() {
         isOpen={isTerminalLocked}
         isLockScreen={true}
         onSuccess={() => setIsTerminalLocked(false)}
-        title="Merchant X Terminal Locked"
-        subtitle="Touch phone fingerprint sensor or enter PIN to unlock"
       />
     </div>
   );

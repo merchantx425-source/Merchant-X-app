@@ -261,22 +261,55 @@ export async function verifyBiometricAuth(options?: {
 }
 
 /**
- * Terminal Backup PIN helpers
+ * Terminal Biometric & PIN status helpers
  */
+export function isBiometricEnabledState(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const rawActive = localStorage.getItem(STORAGE_KEYS.IS_ENABLED);
+    if (rawActive === 'true') return true;
+    if (rawActive === 'false') return false;
+
+    // Check settings JSON
+    const settingsRaw = localStorage.getItem('merchant_x_settings_v1');
+    if (settingsRaw) {
+      const parsed = JSON.parse(settingsRaw);
+      if (parsed?.biometricEnabled === true) return true;
+    }
+  } catch {
+    // Ignore
+  }
+  return false;
+}
+
+export function setBiometricEnabledState(enabled: boolean): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEYS.IS_ENABLED, enabled ? 'true' : 'false');
+}
+
+export function hasStoredTerminalPin(): boolean {
+  if (typeof window === 'undefined') return false;
+  const pin = localStorage.getItem(STORAGE_KEYS.PIN_CODE);
+  return typeof pin === 'string' && pin.trim().length >= 4;
+}
+
 export function getStoredTerminalPin(): string | null {
+  if (typeof window === 'undefined') return null;
   return localStorage.getItem(STORAGE_KEYS.PIN_CODE);
 }
 
 export function setStoredTerminalPin(pin: string): void {
-  if (!pin || pin.length < 4) {
+  if (typeof window === 'undefined') return;
+  const cleaned = pin ? pin.trim() : '';
+  if (!cleaned || cleaned.length < 4) {
     localStorage.removeItem(STORAGE_KEYS.PIN_CODE);
   } else {
-    localStorage.setItem(STORAGE_KEYS.PIN_CODE, pin);
+    localStorage.setItem(STORAGE_KEYS.PIN_CODE, cleaned);
   }
 }
 
 export function verifyTerminalPin(enteredPin: string): boolean {
   const stored = getStoredTerminalPin();
   if (!stored) return true; // No PIN configured
-  return stored === enteredPin;
+  return stored === enteredPin.trim();
 }

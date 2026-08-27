@@ -17,6 +17,8 @@ import {
   verifyTerminalPin,
   getStoredTerminalPin,
   isBiometricAvailable,
+  isBiometricEnabledState,
+  hasStoredTerminalPin,
 } from '../services/biometricService';
 import { MerchantXLogo } from './MerchantXLogo';
 
@@ -33,8 +35,8 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
-  title = 'Biometric Authentication',
-  subtitle = 'Touch your phone’s fingerprint sensor or enter PIN to proceed',
+  title,
+  subtitle,
   isLockScreen = false,
 }) => {
   const [status, setStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
@@ -42,7 +44,9 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
   const [usePinFallback, setUsePinFallback] = useState(false);
   const [enteredPin, setEnteredPin] = useState('');
   const [deviceBiometricType, setDeviceBiometricType] = useState<string>('fingerprint');
-  const hasPinConfigured = !!getStoredTerminalPin();
+
+  const isBiometricActive = isBiometricEnabledState();
+  const hasPinConfigured = hasStoredTerminalPin();
 
   useEffect(() => {
     if (isOpen) {
@@ -50,13 +54,12 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
       setErrorMessage(null);
       setEnteredPin('');
 
-      const hasPin = !!getStoredTerminalPin();
-      const isBiometricActive =
-        localStorage.getItem('merchant_x_biometric_active_v1') === 'true' ||
-        localStorage.getItem('merchant_x_biometric_cred_id_v2') !== null;
+      const biometricActive = isBiometricEnabledState();
+      const hasPin = hasStoredTerminalPin();
 
-      // If user has a PIN but biometric isn't explicitly active, start directly in PIN view
-      const startInPin = hasPin && !isBiometricActive;
+      // If biometric is active: start in fingerprint view
+      // If biometric is NOT active but PIN is set: start directly in PIN view
+      const startInPin = !biometricActive && hasPin;
       setUsePinFallback(startInPin);
 
       isBiometricAvailable().then((res) => {
@@ -64,7 +67,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
       });
 
       // If in biometric mode, auto-trigger native fingerprint prompt
-      if (!startInPin) {
+      if (!startInPin && biometricActive) {
         const timer = setTimeout(() => {
           handleTriggerBiometric();
         }, 350);
@@ -148,6 +151,20 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
     checkPin(enteredPin);
   };
 
+  const displayTitle =
+    title ||
+    (isLockScreen
+      ? 'Merchant X Terminal Locked'
+      : usePinFallback
+      ? 'Security PIN Required'
+      : 'Biometric Authentication');
+
+  const displaySubtitle =
+    subtitle ||
+    (usePinFallback
+      ? 'Enter your terminal security PIN to proceed'
+      : 'Touch your phone’s fingerprint sensor to proceed');
+
   if (!isOpen) return null;
 
   return (
@@ -174,8 +191,8 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
         </div>
 
         {/* Title */}
-        <h3 className="text-lg font-bold font-display text-white tracking-tight">{title}</h3>
-        <p className="text-xs text-zinc-400 mt-0.5 mb-4 px-2">{subtitle}</p>
+        <h3 className="text-lg font-bold font-display text-white tracking-tight">{displayTitle}</h3>
+        <p className="text-xs text-zinc-400 mt-0.5 mb-4 px-2">{displaySubtitle}</p>
 
         {!usePinFallback ? (
           /* Biometric Fingerprint Interface */
@@ -360,18 +377,20 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
                 Unlock Terminal
               </button>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setUsePinFallback(false);
-                  setErrorMessage(null);
-                  handleTriggerBiometric();
-                }}
-                className="w-full py-2 text-zinc-400 hover:text-amber-400 text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-semibold"
-              >
-                <Fingerprint className="w-3.5 h-3.5" />
-                <span>Use Phone Fingerprint Sensor</span>
-              </button>
+              {isBiometricActive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsePinFallback(false);
+                    setErrorMessage(null);
+                    handleTriggerBiometric();
+                  }}
+                  className="w-full py-2 text-zinc-400 hover:text-amber-400 text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-semibold"
+                >
+                  <Fingerprint className="w-3.5 h-3.5" />
+                  <span>Use Phone Fingerprint Sensor</span>
+                </button>
+              )}
             </div>
           </form>
         )}
