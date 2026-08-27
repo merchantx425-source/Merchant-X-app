@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   Sparkles,
   Smartphone,
+  Delete,
 } from 'lucide-react';
 import {
   verifyBiometricAuth,
@@ -33,7 +34,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
   onClose,
   onSuccess,
   title = 'Biometric Authentication',
-  subtitle = 'Touch your phone’s fingerprint sensor to proceed',
+  subtitle = 'Touch your phone’s fingerprint sensor or enter PIN to proceed',
   isLockScreen = false,
 }) => {
   const [status, setStatus] = useState<'idle' | 'scanning' | 'success' | 'error'>('idle');
@@ -47,19 +48,28 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
     if (isOpen) {
       setStatus('idle');
       setErrorMessage(null);
-      setUsePinFallback(false);
       setEnteredPin('');
+
+      const hasPin = !!getStoredTerminalPin();
+      const isBiometricActive =
+        localStorage.getItem('merchant_x_biometric_active_v1') === 'true' ||
+        localStorage.getItem('merchant_x_biometric_cred_id_v2') !== null;
+
+      // If user has a PIN but biometric isn't explicitly active, start directly in PIN view
+      const startInPin = hasPin && !isBiometricActive;
+      setUsePinFallback(startInPin);
 
       isBiometricAvailable().then((res) => {
         setDeviceBiometricType(res.type);
       });
 
-      // Auto-trigger native fingerprint sensor prompt when opened
-      const timer = setTimeout(() => {
-        handleTriggerBiometric();
-      }, 350);
-
-      return () => clearTimeout(timer);
+      // If in biometric mode, auto-trigger native fingerprint prompt
+      if (!startInPin) {
+        const timer = setTimeout(() => {
+          handleTriggerBiometric();
+        }, 350);
+        return () => clearTimeout(timer);
+      }
     }
   }, [isOpen]);
 
@@ -81,7 +91,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
     } catch (err: any) {
       setStatus('error');
       triggerBiometricHaptic('error');
-      setErrorMessage(err.message || 'Fingerprint verification failed. Please try again.');
+      setErrorMessage(err.message || 'Fingerprint verification failed. Please try again or enter your PIN.');
     }
   }, [onSuccess]);
 
@@ -91,22 +101,51 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
     handleTriggerBiometric();
   };
 
-  // PIN submission
+  // Validate entered PIN
+  const checkPin = useCallback(
+    (pin: string) => {
+      if (!pin) return;
+      if (verifyTerminalPin(pin)) {
+        setStatus('success');
+        triggerBiometricHaptic('success');
+        setTimeout(() => {
+          onSuccess();
+        }, 400);
+      } else {
+        triggerBiometricHaptic('error');
+        setErrorMessage('Incorrect PIN. Please try again.');
+        setEnteredPin('');
+      }
+    },
+    [onSuccess]
+  );
+
+  // Keypad button press
+  const handleKeypadPress = (val: string) => {
+    triggerBiometricHaptic('tap');
+    if (val === 'backspace') {
+      setEnteredPin((prev) => prev.slice(0, -1));
+      return;
+    }
+    if (val === 'clear') {
+      setEnteredPin('');
+      return;
+    }
+    if (enteredPin.length < 8) {
+      const nextPin = enteredPin + val;
+      setEnteredPin(nextPin);
+      const stored = getStoredTerminalPin();
+      // Auto-validate if matches stored length
+      if (stored && nextPin.length === stored.length) {
+        checkPin(nextPin);
+      }
+    }
+  };
+
+  // Form submit (physical keyboard Enter)
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!enteredPin) return;
-
-    if (verifyTerminalPin(enteredPin)) {
-      setStatus('success');
-      triggerBiometricHaptic('success');
-      setTimeout(() => {
-        onSuccess();
-      }, 400);
-    } else {
-      triggerBiometricHaptic('error');
-      setErrorMessage('Incorrect PIN. Please try again.');
-      setEnteredPin('');
-    }
+    checkPin(enteredPin);
   };
 
   if (!isOpen) return null;
@@ -117,7 +156,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
         isLockScreen ? 'bg-black/95 backdrop-blur-xl' : 'bg-black/80 backdrop-blur-md'
       }`}
     >
-      <div className="relative w-full max-w-sm bg-[#12141d] border border-amber-500/30 rounded-3xl p-6 sm:p-7 shadow-2xl shadow-purple-950/40 text-center animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-sm bg-[#12141d] border-2 border-purple-900 rounded-3xl p-5 sm:p-7 shadow-2xl shadow-purple-950/60 text-center animate-in fade-in zoom-in-95 duration-200">
         {/* Close Button (only if not full terminal lock) */}
         {!isLockScreen && onClose && (
           <button
@@ -130,19 +169,19 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
         )}
 
         {/* Brand Icon */}
-        <div className="flex justify-center mb-3">
+        <div className="flex justify-center mb-2">
           <MerchantXLogo size="xs" />
         </div>
 
         {/* Title */}
         <h3 className="text-lg font-bold font-display text-white tracking-tight">{title}</h3>
-        <p className="text-xs text-zinc-400 mt-1 mb-6 px-2">{subtitle}</p>
+        <p className="text-xs text-zinc-400 mt-0.5 mb-4 px-2">{subtitle}</p>
 
         {!usePinFallback ? (
           /* Biometric Fingerprint Interface */
-          <div className="space-y-6">
+          <div className="space-y-4">
             {/* Interactive Fingerprint Target with Scanning Glow */}
-            <div className="flex justify-center my-4">
+            <div className="flex justify-center my-2">
               <button
                 type="button"
                 onClick={handleTouchSensorTarget}
@@ -153,7 +192,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
                     ? 'bg-amber-500/20 border-2 border-amber-400 shadow-xl shadow-amber-500/30 ring-4 ring-amber-500/30 animate-pulse'
                     : status === 'error'
                     ? 'bg-red-500/20 border-2 border-red-400 shadow-lg shadow-red-500/30'
-                    : 'bg-[#181a26] border-2 border-zinc-700 hover:border-amber-400 hover:bg-amber-500/10 shadow-lg'
+                    : 'bg-[#181a26] border-2 border-purple-900 hover:border-amber-400 hover:bg-amber-500/10 shadow-lg'
                 }`}
                 title="Touch fingerprint sensor"
               >
@@ -187,7 +226,7 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
             </div>
 
             {/* Status Message */}
-            <div className="min-h-[24px]">
+            <div className="min-h-[22px]">
               {status === 'scanning' && (
                 <div className="inline-flex items-center gap-1.5 text-xs text-amber-300 font-medium animate-pulse">
                   <Smartphone className="w-3.5 h-3.5 text-amber-400" />
@@ -208,13 +247,13 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
               )}
               {status === 'idle' && (
                 <div className="text-xs text-zinc-400">
-                  Tap the fingerprint icon or touch your device sensor
+                  Touch sensor or tap button below to unlock
                 </div>
               )}
             </div>
 
             {/* Action Buttons */}
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2 pt-1">
               <button
                 type="button"
                 onClick={handleTouchSensorTarget}
@@ -233,40 +272,90 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
                   }}
                   className="w-full py-2.5 bg-zinc-800/80 hover:bg-zinc-700 text-zinc-300 font-semibold text-xs rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
                 >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>Use Backup PIN Code</span>
+                  <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Enter Security PIN Instead</span>
                 </button>
               )}
             </div>
           </div>
         ) : (
-          /* Backup PIN Code Screen */
-          <form onSubmit={handlePinSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="block text-xs text-zinc-300 font-semibold">
-                Enter Terminal Security PIN
-              </label>
-              <input
-                type="password"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                maxLength={8}
-                autoFocus
-                placeholder="••••"
-                value={enteredPin}
-                onChange={(e) => setEnteredPin(e.target.value)}
-                className="w-full bg-[#0d0e14] border border-zinc-700 rounded-2xl py-3 text-center text-xl font-mono text-white tracking-widest focus:outline-none focus:border-amber-500"
-              />
+          /* Backup PIN Code Screen with On-Screen Keypad */
+          <form onSubmit={handlePinSubmit} className="space-y-3">
+            {/* Masked PIN Display */}
+            <div className="p-3 bg-[#0d0e14] border-2 border-purple-900 rounded-2xl flex flex-col items-center justify-center">
+              <div className="text-[10px] uppercase tracking-widest text-zinc-400 mb-1 font-mono">
+                Terminal Passcode PIN
+              </div>
+              <div className="flex items-center gap-2.5 h-8">
+                {[0, 1, 2, 3].map((idx) => {
+                  const hasChar = enteredPin.length > idx;
+                  return (
+                    <span
+                      key={idx}
+                      className={`w-3.5 h-3.5 rounded-full transition-all ${
+                        hasChar
+                          ? 'bg-amber-400 scale-110 shadow-sm shadow-amber-400/50'
+                          : 'bg-zinc-800 border border-zinc-700'
+                      }`}
+                    />
+                  );
+                })}
+                {enteredPin.length > 4 && (
+                  <span className="text-xs text-amber-400 font-mono ml-1 font-bold">
+                    +{enteredPin.length - 4}
+                  </span>
+                )}
+              </div>
             </div>
 
             {errorMessage && (
-              <div className="text-xs text-red-300 font-medium">{errorMessage}</div>
+              <div className="text-xs text-red-300 font-medium flex items-center justify-center gap-1">
+                <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />
+                <span>{errorMessage}</span>
+              </div>
             )}
+
+            {/* Quick Touch Keypad for PIN with Dark Purple Edges */}
+            <div className="grid grid-cols-3 gap-1.5 pt-1">
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((digit) => (
+                <button
+                  key={digit}
+                  type="button"
+                  onClick={() => handleKeypadPress(digit)}
+                  className="h-10 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 border-purple-900 rounded-xl text-lg font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-95"
+                >
+                  {digit}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('clear')}
+                className="h-10 bg-[#141520] hover:bg-[#1f2130] text-zinc-400 active:text-white border-2 border-purple-900 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer"
+              >
+                C
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('0')}
+                className="h-10 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 border-purple-900 rounded-xl text-lg font-bold font-display text-white shadow-sm shadow-purple-950/40 cursor-pointer transition-all active:scale-95"
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('backspace')}
+                className="h-10 bg-[#141520] hover:bg-[#1f2130] active:bg-[#282a3d] border-2 border-purple-900 rounded-xl flex items-center justify-center text-zinc-400 hover:text-red-400 shadow-sm shadow-purple-950/40 cursor-pointer"
+                title="Delete"
+              >
+                <Delete className="w-4 h-4" />
+              </button>
+            </div>
 
             <div className="space-y-2 pt-1">
               <button
                 type="submit"
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                disabled={!enteredPin}
+                className="w-full py-3 bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:pointer-events-none text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md"
               >
                 Unlock Terminal
               </button>
@@ -276,10 +365,12 @@ export const BiometricModal: React.FC<BiometricModalProps> = ({
                 onClick={() => {
                   setUsePinFallback(false);
                   setErrorMessage(null);
+                  handleTriggerBiometric();
                 }}
-                className="w-full py-2 text-zinc-400 hover:text-white text-xs transition-colors cursor-pointer"
+                className="w-full py-2 text-zinc-400 hover:text-amber-400 text-xs transition-colors cursor-pointer flex items-center justify-center gap-1.5 font-semibold"
               >
-                Back to Fingerprint Sensor
+                <Fingerprint className="w-3.5 h-3.5" />
+                <span>Use Phone Fingerprint Sensor</span>
               </button>
             </div>
           </form>

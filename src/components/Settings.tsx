@@ -538,7 +538,7 @@ export const Settings: React.FC<SettingsProps> = ({
           <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             Security & Terminal Lock
           </h2>
-          {settings.biometricEnabled && onLockTerminal && (
+          {(settings.biometricEnabled || !!terminalPinInput || !!getStoredTerminalPin()) && onLockTerminal && (
             <button
               type="button"
               onClick={onLockTerminal}
@@ -649,8 +649,20 @@ export const Settings: React.FC<SettingsProps> = ({
               </button>
             </form>
             {savedPinNotice && (
-              <div className="text-[11px] text-emerald-400 font-medium">
-                ✓ Terminal backup PIN saved successfully.
+              <div className="flex items-center justify-between p-2 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-[11px] text-emerald-300">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>✓ Terminal security PIN saved.</span>
+                </div>
+                {onLockTerminal && (
+                  <button
+                    type="button"
+                    onClick={onLockTerminal}
+                    className="underline text-amber-400 font-bold hover:text-amber-300 cursor-pointer text-[10px]"
+                  >
+                    Lock & Test Now
+                  </button>
+                )}
               </div>
             )}
           </div>

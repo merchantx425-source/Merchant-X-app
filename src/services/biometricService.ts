@@ -203,8 +203,7 @@ export async function verifyBiometricAuth(options?: {
   if (
     typeof window !== 'undefined' &&
     window.PublicKeyCredential &&
-    navigator.credentials &&
-    navigator.credentials.get
+    navigator.credentials
   ) {
     try {
       const challenge = new Uint8Array(32);
@@ -214,34 +213,41 @@ export async function verifyBiometricAuth(options?: {
       const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
       const savedCredId = localStorage.getItem(STORAGE_KEYS.CREDENTIAL_ID);
 
-      const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
-        challenge,
-        timeout: 45000,
-        userVerification: 'preferred',
-        rpId: isLocal ? undefined : hostname,
-        allowCredentials: savedCredId
-          ? [
-              {
-                id: base64urlToBuffer(savedCredId),
-                type: 'public-key',
-                transports: ['internal'],
-              },
-            ]
-          : undefined,
-      };
+      if (savedCredId && navigator.credentials.get) {
+        const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
+          challenge,
+          timeout: 45000,
+          userVerification: 'preferred',
+          rpId: isLocal ? undefined : hostname,
+          allowCredentials: [
+            {
+              id: base64urlToBuffer(savedCredId),
+              type: 'public-key',
+              transports: ['internal'],
+            },
+          ],
+        };
 
-      const assertion = await navigator.credentials.get({
-        publicKey: publicKeyCredentialRequestOptions,
-      });
+        const assertion = await navigator.credentials.get({
+          publicKey: publicKeyCredentialRequestOptions,
+        });
 
-      if (assertion) {
-        triggerBiometricHaptic('success');
-        return { success: true, method: 'webauthn' };
+        if (assertion) {
+          triggerBiometricHaptic('success');
+          return { success: true, method: 'webauthn' };
+        }
+      } else if (navigator.credentials.create) {
+        // If not registered yet, invoke platform authenticator registration directly
+        const regRes = await registerBiometricPasskey('Merchant Terminal');
+        if (regRes.success) {
+          triggerBiometricHaptic('success');
+          return { success: true, method: regRes.isWebAuthn ? 'webauthn' : 'touch_sensor' };
+        }
       }
     } catch (err: any) {
       console.warn('[Biometric] WebAuthn verify prompt notice:', err);
       if (err.name === 'NotAllowedError') {
-        throw new Error('Biometric authentication cancelled.');
+        throw new Error('Biometric prompt dismissed. Touch sensor again or enter your PIN.');
       }
       if (options?.forceWebAuthn) {
         throw new Error(err.message || 'Biometric verification failed.');
