@@ -16,6 +16,8 @@ import { getTranslation } from '../config/i18n';
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { TermsOfServiceModal } from './TermsOfServiceModal';
 import { BiometricModal } from './BiometricModal';
+import { VideoTutorialModal } from './Tutorial/VideoTutorialModal';
+import { FeedbackModal } from './Feedback/FeedbackModal';
 import { MerchantXLogo } from './MerchantXLogo';
 import {
   Wallet,
@@ -38,6 +40,9 @@ import {
   Lock,
   KeyRound,
   CheckCircle2,
+  Video,
+  MessageSquare,
+  HelpCircle,
 } from 'lucide-react';
 import { isStandalone } from '../services/pwaService';
 
@@ -81,6 +86,8 @@ export const Settings: React.FC<SettingsProps> = ({
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const [copiedShare, setCopiedShare] = useState(false);
   const [biometricInfo, setBiometricInfo] = useState<{
     available: boolean;
@@ -184,7 +191,61 @@ export const Settings: React.FC<SettingsProps> = ({
         <h1 className="text-xl sm:text-2xl font-bold font-display text-white tracking-tight">
           {getTranslation(lang, 'settings')}
         </h1>
-        <p className="text-xs text-zinc-400">Terminal preferences, security, and receipt branding</p>
+        <p className="text-xs text-zinc-400">Terminal preferences, help & support, security, and receipt branding</p>
+      </div>
+
+      {/* HELP & SUPPORT */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-amber-400 px-1 flex items-center gap-1.5">
+          <HelpCircle className="w-3.5 h-3.5" />
+          <span>Help & Support</span>
+        </h2>
+        <div className="bg-[#14161f] border border-amber-500/30 rounded-2xl overflow-hidden divide-y divide-zinc-800/60 shadow-lg shadow-amber-500/5">
+          {/* Video Tutorial */}
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shadow-sm group-hover:scale-105 transition-transform shrink-0">
+                <Video className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>How to Use Merchant X</span>
+                  <span className="px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-extrabold uppercase rounded">
+                    Masterclass
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                  Learn how to use Merchant X for crypto payments, wallet transactions and more.
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors shrink-0 ml-2" />
+          </button>
+
+          {/* Feedback */}
+          <button
+            type="button"
+            onClick={() => setShowFeedback(true)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left group"
+          >
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shadow-sm group-hover:scale-105 transition-transform shrink-0">
+                <MessageSquare className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white">Help Us Improve Merchant X</div>
+                <div className="text-xs text-zinc-400 mt-0.5 leading-relaxed">
+                  Tell us what you like, what isn't working, or what you'd like us to improve.
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400 transition-colors shrink-0 ml-2" />
+          </button>
+        </div>
       </div>
 
       {/* 1. WALLET / ACCOUNT */}
@@ -718,7 +779,64 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 8. APP & ABOUT */}
+      {/* 8. HELP & TUTORIALS */}
+      <div className="space-y-2">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center gap-1.5">
+          <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+          <span>Help & Tutorial</span>
+        </h2>
+        <div className="bg-[#14161f] border border-zinc-800/80 rounded-2xl overflow-hidden divide-y divide-zinc-800/60">
+          <button
+            type="button"
+            onClick={() => setShowTutorial(true)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <Video className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>Merchant X Masterclass</span>
+                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded">
+                    Interactive Walkthrough
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  Full step-by-step video tutorial demonstrating POS setup, Verse payments & receipt flow
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowFeedback(true)}
+            className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                <MessageSquare className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>Send Feedback</span>
+                  <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[9px] font-bold rounded">
+                    Direct Email
+                  </span>
+                </div>
+                <div className="text-xs text-zinc-400">
+                  Report issues or submit ideas directly to <span className="font-mono text-zinc-300">merchantx425@gmail.com</span>
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-emerald-400 transition-colors" />
+          </button>
+        </div>
+      </div>
+
+      {/* 9. APP & ABOUT */}
       <div className="space-y-2">
         <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
           App
@@ -817,6 +935,8 @@ export const Settings: React.FC<SettingsProps> = ({
       </div>
 
       {/* Modals */}
+      <VideoTutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
+      <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />
       <PrivacyPolicyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />
       <TermsOfServiceModal isOpen={showTerms} onClose={() => setShowTerms(false)} />
       <BiometricModal

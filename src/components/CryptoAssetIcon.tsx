@@ -1,5 +1,6 @@
 import React from 'react';
 import { CryptoAsset } from '../types/merchant';
+import { VerseLogo } from './VerseLogo';
 
 interface CryptoAssetIconProps {
   asset: CryptoAsset;
@@ -23,61 +24,7 @@ export const CryptoAssetIcon: React.FC<CryptoAssetIconProps> = ({
 
   switch (asset) {
     case 'VERSE':
-      return (
-        /* Official Verse Logo constructed with radiant Cyan -> Purple -> Magenta gradient and dual-pill white 'V' */
-        <svg
-          viewBox="0 0 100 100"
-          className={`${dim} ${className} shrink-0`}
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-        >
-          <defs>
-            <linearGradient
-              id="verse-bg-gradient"
-              x1="0%"
-              y1="0%"
-              x2="100%"
-              y2="100%"
-            >
-              <stop offset="0%" stopColor="#00D2FF" />
-              <stop offset="35%" stopColor="#0072FF" />
-              <stop offset="65%" stopColor="#8A2BE2" />
-              <stop offset="100%" stopColor="#FF007F" />
-            </linearGradient>
-            <filter id="verse-glow" x="-10%" y="-10%" width="120%" height="120%">
-              <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#8A2BE2" floodOpacity="0.4" />
-            </filter>
-          </defs>
-
-          {/* Background Gradient Circle */}
-          <circle cx="50" cy="50" r="48" fill="url(#verse-bg-gradient)" filter="url(#verse-glow)" />
-
-          {/* Inner Stylized Verse 'V' */}
-          <g transform="translate(0, 0)">
-            {/* Left White Pill */}
-            <rect
-              x="26"
-              y="32"
-              width="18"
-              height="40"
-              rx="9"
-              transform="rotate(-30 35 52)"
-              fill="#FFFFFF"
-            />
-            {/* Right Translucent Glowing Pill Overlapping to create 'V' */}
-            <rect
-              x="56"
-              y="32"
-              width="18"
-              height="40"
-              rx="9"
-              transform="rotate(30 65 52)"
-              fill="#FFFFFF"
-              fillOpacity="0.78"
-            />
-          </g>
-        </svg>
-      );
+      return <VerseLogo size={size} className={className} />;
 
     case 'BTC':
       return (

@@ -34,6 +34,7 @@ import { ChargeFlowModal } from './components/ChargeFlowModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { BiometricModal } from './components/BiometricModal';
+import { VideoTutorialModal } from './components/Tutorial/VideoTutorialModal';
 import {
   isBiometricEnabledState,
   hasStoredTerminalPin,
@@ -49,6 +50,7 @@ const STORAGE_KEYS = {
 export default function App() {
   // 1. Initial Loading Animation State
   const [isLoadingApp, setIsLoadingApp] = useState(true);
+  const [showVideoTutorial, setShowVideoTutorial] = useState(false);
 
   // Terminal Lock Screen State for Biometrics & PIN:
   // - ONLY if biometric authentication is on, it locks on reload (shows fingerprint)
@@ -625,7 +627,12 @@ export default function App() {
     <div className="min-h-screen bg-[#07080b] text-white flex flex-col justify-between selection:bg-amber-500 selection:text-black">
       {/* 1. Loading Screen Animation */}
       {isLoadingApp && (
-        <LoadingScreen onComplete={() => setIsLoadingApp(false)} />
+        <LoadingScreen
+          onComplete={() => {
+            setIsLoadingApp(false);
+            setShowVideoTutorial(true);
+          }}
+        />
       )}
 
       {/* 2. Top Notification Bar */}
@@ -772,6 +779,12 @@ export default function App() {
         isOpen={isTerminalLocked}
         isLockScreen={true}
         onSuccess={() => setIsTerminalLocked(false)}
+      />
+
+      {/* 10. Startup / Help Video Tutorial Modal */}
+      <VideoTutorialModal
+        isOpen={showVideoTutorial}
+        onClose={() => setShowVideoTutorial(false)}
       />
     </div>
   );

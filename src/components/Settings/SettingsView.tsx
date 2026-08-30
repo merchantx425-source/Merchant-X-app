@@ -11,6 +11,8 @@ import {
 import { PrivacyPolicyModal } from './PrivacyPolicyModal';
 import { TermsOfServiceModal } from './TermsOfServiceModal';
 import { WalletConnectModal } from '../Wallet/WalletConnectModal';
+import { VideoTutorialModal } from '../Tutorial/VideoTutorialModal';
+import { FeedbackModal } from '../Feedback/FeedbackModal';
 import { MerchantXLogo } from '../MerchantXLogo';
 import {
   Wallet,
@@ -30,6 +32,9 @@ import {
   Check,
   AlertCircle,
   Sparkles,
+  Video,
+  MessageSquare,
+  HelpCircle,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -46,6 +51,8 @@ export const SettingsView: React.FC = () => {
   const [showWalletModal, setShowWalletModal] = useState(false);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const [biometricSupported, setBiometricSupported] = useState<boolean | null>(null);
   const [biometricError, setBiometricError] = useState<string | null>(null);
@@ -366,6 +373,61 @@ export const SettingsView: React.FC = () => {
           )}
         </div>
 
+        {/* ================= HELP & SUPPORT ================= */}
+        <div className="bg-[#12141c] border border-amber-500/30 rounded-2xl p-4 shadow-sm shadow-amber-500/5">
+          <div className="flex items-center gap-2 mb-3">
+            <HelpCircle className="w-4 h-4 text-amber-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 font-['Outfit']">
+              Help & Support
+            </h3>
+          </div>
+
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setShowTutorial(true)}
+              className="w-full p-3 bg-[#171a24] hover:bg-[#1f2332] border border-slate-800/60 rounded-xl flex items-center justify-between transition-colors cursor-pointer text-left group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <Video className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <span>How to Use Merchant X</span>
+                    <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded">
+                      Tutorial
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Video masterclass on crypto payments, wallet setup & scanner
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowFeedback(true)}
+              className="w-full p-3 bg-[#171a24] hover:bg-[#1f2332] border border-slate-800/60 rounded-xl flex items-center justify-between transition-colors cursor-pointer text-left group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                  <MessageSquare className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white">Help Us Improve Merchant X</div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Send feedback directly to merchantx425@gmail.com
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+            </button>
+          </div>
+        </div>
+
         {/* ================= APP INFO & LEGAL ================= */}
         <div className="bg-[#12141c] border border-slate-800/80 rounded-2xl p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-3">
@@ -440,6 +502,8 @@ export const SettingsView: React.FC = () => {
       {showWalletModal && <WalletConnectModal onClose={() => setShowWalletModal(false)} />}
       {showPrivacyModal && <PrivacyPolicyModal onClose={() => setShowPrivacyModal(false)} />}
       {showTermsModal && <TermsOfServiceModal onClose={() => setShowTermsModal(false)} />}
+      {showTutorial && <VideoTutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />}
+      {showFeedback && <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />}
     </div>
   );
 };
