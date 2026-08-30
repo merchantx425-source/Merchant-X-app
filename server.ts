@@ -1,6 +1,9 @@
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
+import { sendFeedbackEmail, TARGET_EMAIL, FeedbackPayload } from './server/emailService';
 
 const app = express();
 const PORT = 3000;
@@ -8,77 +11,97 @@ const PORT = 3000;
 // Body parser for JSON
 app.use(express.json());
 
-// Secure Server-Side Feedback Endpoint
-// Receives feedback and forwards directly to merchantx425@gmail.com
+/**
+ * Primary Feedback Submission Endpoint
+ * Receives feedback from frontend, dispatches email to merchantx425@gmail.com via free email API.
+ */
 app.post('/api/feedback', async (req, res) => {
   try {
-    const { feedbackType, message, email, appVersion, platform, timestamp } = req.body;
+    const { feedbackType, message, email, username, walletAddress, appVersion, platform, timestamp } = req.body;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
-      return res.status(400).json({ error: 'Feedback message is required.' });
-    }
-
-    const cleanType = feedbackType || 'General Feedback';
-    const cleanEmail = email && typeof email === 'string' && email.trim() ? email.trim() : 'Anonymous (No email provided)';
-    const cleanVersion = appVersion || '1.0.0';
-    const cleanPlatform = platform || 'Web / PWA';
-    const dateStr = timestamp || new Date().toISOString();
-
-    const emailSubject = `Merchant X Feedback: [${cleanType}]`;
-
-    // 1. Dispatch directly to owner email (merchantx425@gmail.com) via FormSubmit
-    try {
-      const emailPayload = {
-        _subject: emailSubject,
-        _replyto: cleanEmail !== 'Anonymous (No email provided)' ? cleanEmail : 'merchantx425@gmail.com',
-        _template: 'table',
-        _captcha: 'false',
-        'Feedback Category': cleanType,
-        'Sender Email': cleanEmail,
-        'Message': message.trim(),
-        'Submitted At': dateStr,
-        'App Version': cleanVersion,
-        'Platform / Device': cleanPlatform,
-        'Destination': 'merchantx425@gmail.com'
-      };
-
-      const forwardRes = await fetch('https://formsubmit.co/ajax/merchantx425@gmail.com', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: JSON.stringify(emailPayload),
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter your feedback message before sending.',
       });
-
-      if (!forwardRes.ok) {
-        console.warn('[Feedback Email Forward Warning]: FormSubmit returned status', forwardRes.status);
-      } else {
-        console.log('[Feedback Success]: Email successfully delivered to merchantx425@gmail.com');
-      }
-    } catch (deliveryErr) {
-      console.warn('[Feedback Delivery Network Note]:', deliveryErr);
     }
 
-    // 2. Server Audit Log
-    console.log('\n================== [ MERCHANT X INCOMING FEEDBACK ] ==================');
-    console.log(`To: merchantx425@gmail.com`);
-    console.log(`Subject: ${emailSubject}`);
-    console.log(`From: ${cleanEmail}`);
-    console.log(`Type: ${cleanType}`);
-    console.log(`Message: ${message.trim()}`);
-    console.log(`Time: ${dateStr}`);
-    console.log('======================================================================\n');
+    const payload: FeedbackPayload = {
+      feedbackType: feedbackType || 'General Feedback',
+      message: message.trim(),
+      email: email && typeof email === 'string' && email.trim() ? email.trim() : undefined,
+      username: username && typeof username === 'string' && username.trim() ? username.trim() : undefined,
+      walletAddress: walletAddress && typeof walletAddress === 'string' && walletAddress.trim() ? walletAddress.trim() : undefined,
+      appVersion: appVersion || '1.0.0',
+      platform: platform || 'Web POS',
+      timestamp: timestamp || new Date().toISOString(),
+    };
+
+    // Dispatch via free email API securely on server-side
+    const deliveryResult = await sendFeedbackEmail(payload);
 
     return res.status(200).json({
       success: true,
-      deliveredTo: 'merchantx425@gmail.com',
-      message: 'Thank you! Your feedback has been delivered directly to merchantx425@gmail.com.',
+      message: 'Thank you! Your feedback has been sent successfully.',
+      deliveredTo: TARGET_EMAIL,
+      provider: deliveryResult.provider,
+      messageId: deliveryResult.messageId,
     });
   } catch (err: any) {
-    console.error('[Feedback Server Error]:', err);
-    return res.status(500).json({ error: 'Failed to process feedback. Please try again.' });
+    console.error('[Feedback Backend Error]:', err.message || err);
+    return res.status(500).json({
+      success: false,
+      error: "We couldn't send your feedback right now. Please try again.",
+      details: err.message || 'Unable to deliver feedback.',
+    });
   }
+});
+
+/**
+ * Diagnostic Test Endpoint for Email Delivery
+ * Sends a test ping to merchantx425@gmail.com
+ */
+app.all('/api/feedback/test', async (_req, res) => {
+  try {
+    const testPayload: FeedbackPayload = {
+      feedbackType: 'Diagnostic Test Ping',
+      message: `This is an automated test verifying the Merchant X email delivery pipeline at ${new Date().toISOString()}.`,
+      email: 'system-test@merchant-x.app',
+      appVersion: '1.0.0',
+      platform: 'Server Diagnostic Test',
+      timestamp: new Date().toISOString(),
+    };
+
+    const deliveryResult = await sendFeedbackEmail(testPayload);
+
+    return res.status(200).json({
+      success: true,
+      message: `Test email successfully dispatched to ${TARGET_EMAIL} via ${deliveryResult.provider}`,
+      messageId: deliveryResult.messageId,
+      provider: deliveryResult.provider,
+      deliveredTo: TARGET_EMAIL,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error('[Feedback Test Error]:', err.message || err);
+    return res.status(500).json({
+      success: false,
+      error: "We couldn't send your feedback right now. Please try again.",
+      details: err.message || 'Email delivery test failed.',
+    });
+  }
+});
+
+/**
+ * Service Status Endpoint
+ */
+app.get('/api/feedback/status', (_req, res) => {
+  res.json({
+    status: 'online',
+    provider: 'Free API (FormSubmit + Resend Fallback)',
+    targetRecipient: TARGET_EMAIL,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Health check endpoint

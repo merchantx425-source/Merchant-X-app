@@ -35,6 +35,8 @@ import { ReceiptModal } from './components/ReceiptModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
 import { BiometricModal } from './components/BiometricModal';
 import { VideoTutorialModal } from './components/Tutorial/VideoTutorialModal';
+import { Calculator } from './components/Calculator/Calculator';
+import { CurrencyItem } from './services/currencyRateService';
 import {
   isBiometricEnabledState,
   hasStoredTerminalPin,
@@ -592,6 +594,32 @@ export default function App() {
     exportTransactionsToPdf(transactions, settings);
   };
 
+  // Use Amount for Payment from Calculator
+  const handleUseAmountForPayment = (amount: number, currency: CurrencyItem) => {
+    if (amount <= 0) return;
+
+    if (currency.type === 'crypto') {
+      const cryptoAsset = currency.id as CryptoAsset;
+      if (SUPPORTED_ASSETS[cryptoAsset]) {
+        setSelectedAsset(cryptoAsset);
+        const rate = cryptoInFiatRates[cryptoAsset] || 1;
+        const fiatEquiv = amount * rate;
+        setAmountInput(fiatEquiv.toFixed(2).replace(/\.?0+$/, ''));
+      } else {
+        setAmountInput(amount.toFixed(2));
+      }
+    } else {
+      // Fiat currency
+      if (currency.id !== settings.fiatCurrency) {
+        // If merchant calculates in a different supported fiat, set that fiat or amount
+        handleUpdateSettings({ fiatCurrency: currency.id as any });
+      }
+      setAmountInput(amount.toFixed(2).replace(/\.?0+$/, ''));
+    }
+
+    setActiveTab('pos');
+  };
+
   // Subscription Success Callback (Unlocks Pro for exactly 30 days)
   const handleSubscriptionSuccess = (record: SubscriptionRecord) => {
     const now = Date.now();
@@ -671,6 +699,14 @@ export default function App() {
             isPro={isPro}
             freeTransactionsRemaining={freeTransactionsRemaining}
             onNavigateToSubscription={() => setActiveTab('subscription')}
+          />
+        )}
+
+        {activeTab === 'calculator' && (
+          <Calculator
+            settings={settings}
+            onUseAmountForPayment={handleUseAmountForPayment}
+            onOpenSettings={() => setActiveTab('settings')}
           />
         )}
 

@@ -3,7 +3,7 @@ export type BlockchainNetwork = 'Polygon' | 'Ethereum' | 'Bitcoin';
 export type FiatCurrency = 'NGN' | 'USD' | 'EUR' | 'GBP' | 'CAD' | 'AUD' | 'JPY' | 'CHF' | 'ZAR' | 'KES' | 'GHS';
 export type TxStatus = 'paid' | 'pending' | 'failed';
 export type AppTheme = 'dark' | 'light' | 'system';
-export type AppTab = 'pos' | 'transactions' | 'subscription' | 'settings';
+export type AppTab = 'pos' | 'calculator' | 'transactions' | 'subscription' | 'settings';
 export type PlanType = 'free' | 'pro';
 export type ReceiptTheme = 'gold' | 'neon' | 'emerald' | 'obsidian' | 'paper' | 'verse';
 

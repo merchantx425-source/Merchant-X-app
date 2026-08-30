@@ -3,6 +3,7 @@ export type SupportedLanguage = 'en' | 'fr' | 'es' | 'pt';
 export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   en: {
     pos: 'POS',
+    calculator: 'Calculator',
     history: 'History',
     plan: 'Plan',
     settings: 'Settings',
@@ -64,6 +65,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   },
   fr: {
     pos: 'TPV',
+    calculator: 'Calculatrice',
     history: 'Historique',
     plan: 'Abonnement',
     settings: 'Paramètres',
@@ -125,6 +127,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   },
   es: {
     pos: 'TPV',
+    calculator: 'Calculadora',
     history: 'Historial',
     plan: 'Plan',
     settings: 'Ajustes',
@@ -186,6 +189,7 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
   },
   pt: {
     pos: 'POS',
+    calculator: 'Calculadora',
     history: 'Histórico',
     plan: 'Plano',
     settings: 'Configurações',

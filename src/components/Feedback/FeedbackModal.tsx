@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { MessageSquare, Bug, Lightbulb, FileText, Send, CheckCircle2, X, AlertCircle, Sparkles, Mail, ShieldCheck } from 'lucide-react';
+import { MessageSquare, Bug, Lightbulb, FileText, Send, CheckCircle2, X, AlertCircle, Sparkles, Mail, ShieldCheck, RefreshCw } from 'lucide-react';
 
 interface FeedbackModalProps {
   isOpen: boolean;
@@ -23,7 +23,10 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [confirmedProvider, setConfirmedProvider] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isTestingPipeline, setIsTestingPipeline] = useState(false);
+  const [testResult, setTestResult] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
@@ -35,6 +38,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
     }
 
     setErrorMessage(null);
+    setTestResult(null);
     setIsSubmitting(true);
 
     const payload = {
@@ -46,9 +50,6 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
       platform: typeof window !== 'undefined' ? `${window.navigator.userAgent.includes('Mobile') ? 'Mobile' : 'Desktop'} / Browser POS` : 'Web POS',
     };
 
-    let delivered = false;
-
-    // 1. Try Primary Server API Route
     try {
       const res = await fetch('/api/feedback', {
         method: 'POST',
@@ -56,51 +57,54 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
         body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        delivered = true;
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success) {
+        setIsSuccess(true);
+        setConfirmedProvider(data.provider || 'Free Email API');
+        setMessage('');
+        setEmail('');
+      } else {
+        setIsSuccess(false);
+        const errMsg = data.error || "We couldn't send your feedback right now. Please try again.";
+        setErrorMessage(errMsg);
       }
-    } catch {
-      // Continue to direct FormSubmit fallback
+    } catch (err: any) {
+      setIsSuccess(false);
+      setErrorMessage("We couldn't send your feedback right now. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
+  };
 
-    // 2. Client-side direct fallback if needed
-    if (!delivered) {
-      try {
-        const directPayload = {
-          _subject: `Merchant X Feedback: [${selectedType}]`,
-          _replyto: email.trim() || OWNER_EMAIL,
-          _template: 'table',
-          _captcha: 'false',
-          'Feedback Category': selectedType,
-          'Sender Email': email.trim() || 'Anonymous',
-          'Message': message.trim(),
-          'Timestamp': new Date().toISOString(),
-          'App Version': '1.0.0',
-        };
+  const handleTestPipeline = async () => {
+    setIsTestingPipeline(true);
+    setErrorMessage(null);
+    setTestResult(null);
 
-        await fetch(`https://formsubmit.co/ajax/${OWNER_EMAIL}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify(directPayload),
-        });
-        delivered = true;
-      } catch {
-        // Handled below
+    try {
+      const res = await fetch('/api/feedback/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok && data.success) {
+        setTestResult(`✓ Test email delivered to ${OWNER_EMAIL}`);
+      } else {
+        setErrorMessage(data.error || "We couldn't send your feedback right now. Please try again.");
       }
+    } catch (err: any) {
+      setErrorMessage("We couldn't send your feedback right now. Please try again.");
+    } finally {
+      setIsTestingPipeline(false);
     }
-
-    setIsSubmitting(false);
-    setIsSuccess(true);
-    setMessage('');
-    setEmail('');
   };
 
   const handleClose = () => {
     setIsSuccess(false);
     setErrorMessage(null);
+    setTestResult(null);
     onClose();
   };
 
@@ -121,19 +125,25 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
         </button>
 
         {isSuccess ? (
-          /* Success Screen */
+          /* Verified Success Screen */
           <div className="text-center py-8 space-y-4 animate-in zoom-in-95 duration-200">
             <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto shadow-lg shadow-emerald-500/10">
               <CheckCircle2 className="w-8 h-8" />
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="text-xl font-bold font-display text-white">Feedback Sent!</h3>
+              <h3 className="text-xl font-bold font-display text-white">Thank you! Your feedback has been sent successfully.</h3>
               <p className="text-sm text-emerald-300 font-medium">
-                Automatically delivered to <span className="font-mono font-bold text-white">{OWNER_EMAIL}</span>
+                Sent to <span className="font-mono font-bold text-white">{OWNER_EMAIL}</span>
               </p>
-              <p className="text-xs text-zinc-400 pt-1 max-w-xs mx-auto">
-                Thank you for helping us make Merchant X the fastest decentralized crypto payment terminal.
+              {confirmedProvider && (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-950/60 border border-emerald-800/60 rounded-lg text-[11px] text-emerald-300">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Delivered securely via {confirmedProvider}</span>
+                </div>
+              )}
+              <p className="text-xs text-zinc-400 pt-2 max-w-xs mx-auto">
+                Your feedback has been sent directly to the development inbox.
               </p>
             </div>
 
@@ -143,7 +153,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 onClick={handleClose}
                 className="w-full sm:w-auto px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-lg shadow-amber-500/20 cursor-pointer"
               >
-                Close & Return
+                Done
               </button>
             </div>
           </div>
@@ -156,10 +166,10 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
                 <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
                   <MessageSquare className="w-4 h-4" />
                 </div>
-                <h3 className="text-lg font-bold font-display text-white">Help Us Improve Merchant X</h3>
+                <h3 className="text-lg font-bold font-display text-white">Send Merchant X Feedback</h3>
               </div>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Tell us what you like, what isn't working, or what you'd like us to improve. Sent automatically to{' '}
+                Report bugs, suggest features, or share feedback. All messages are dispatched directly to{' '}
                 <span className="text-amber-400 font-mono font-semibold">{OWNER_EMAIL}</span>.
               </p>
             </div>
@@ -206,7 +216,7 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
               />
             </div>
 
-            {/* Optional Email */}
+            {/* Optional Email (used as Reply-To) */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-zinc-300 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
@@ -224,11 +234,31 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
               />
             </div>
 
-            {/* Direct Automated Delivery Notice */}
-            <div className="flex items-center gap-2 p-2.5 bg-zinc-900/60 border border-zinc-800/80 rounded-xl text-[11px] text-zinc-400">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-              <span>Direct automatic delivery to: <strong className="text-zinc-200 font-mono">{OWNER_EMAIL}</strong></span>
+            {/* Destination Verification & Test Bar */}
+            <div className="flex items-center justify-between p-2.5 bg-zinc-900/60 border border-zinc-800/80 rounded-xl text-[11px] text-zinc-400">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                <span>To: <strong className="text-zinc-200 font-mono">{OWNER_EMAIL}</strong></span>
+              </div>
+              <button
+                type="button"
+                onClick={handleTestPipeline}
+                disabled={isTestingPipeline}
+                className="flex items-center gap-1 text-[10px] text-amber-400 hover:text-amber-300 font-semibold cursor-pointer disabled:opacity-50"
+                title="Send a verified test email to verify delivery"
+              >
+                <RefreshCw className={`w-3 h-3 ${isTestingPipeline ? 'animate-spin' : ''}`} />
+                <span>{isTestingPipeline ? 'Testing...' : 'Test Delivery'}</span>
+              </button>
             </div>
+
+            {/* Test Result Bar */}
+            {testResult && (
+              <div className="flex items-center gap-2 p-2.5 bg-emerald-950/40 border border-emerald-800/60 rounded-xl text-xs text-emerald-300">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{testResult}</span>
+              </div>
+            )}
 
             {/* Error Message */}
             {errorMessage && (
@@ -271,3 +301,4 @@ export const FeedbackModal: React.FC<FeedbackModalProps> = ({ isOpen, onClose })
     </div>
   );
 };
+

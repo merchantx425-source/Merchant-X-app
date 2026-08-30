@@ -373,12 +373,12 @@ export const SettingsView: React.FC = () => {
           )}
         </div>
 
-        {/* ================= HELP & SUPPORT ================= */}
+        {/* ================= HELP & TUTORIAL ================= */}
         <div className="bg-[#12141c] border border-amber-500/30 rounded-2xl p-4 shadow-sm shadow-amber-500/5">
           <div className="flex items-center gap-2 mb-3">
             <HelpCircle className="w-4 h-4 text-amber-400" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-amber-400 font-['Outfit']">
-              Help & Support
+              Help & Tutorial
             </h3>
           </div>
 
