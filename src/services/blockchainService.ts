@@ -1111,7 +1111,19 @@ export async function verifyBlockchainTransaction(params: {
       const paddedMerchant = ethers.zeroPadValue(merchantWallet.toLowerCase(), 32).toLowerCase();
 
       const matchedLog = receipt.logs?.find((log: any) => {
-        const isContract = log.address.toLowerCase() === config.contractAddress!.toLowerCase();
+        const isContract =
+          log.address.toLowerCase() === config.contractAddress!.toLowerCase() ||
+          (expectedAsset === 'VERSE' &&
+            (log.address.toLowerCase() === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
+              log.address.toLowerCase() === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18')) ||
+          (expectedAsset === 'USDT' &&
+            (log.address.toLowerCase() === '0xc2132d05d31c914a87c6611c10748aeb04b58e8f' ||
+              log.address.toLowerCase() === '0xdac17f958d2ee523a2206206994597c13d831ec7')) ||
+          (expectedAsset === 'USDC' &&
+            (log.address.toLowerCase() === '0x3c499c542cef5e3811e1192ce70d8cc03d5c3359' ||
+              log.address.toLowerCase() === '0x2791bca1f2de4661ed88a30c99a7a9449aa84174' ||
+              log.address.toLowerCase() === '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'));
+
         const isTransfer = log.topics?.[0]?.toLowerCase() === transferTopic.toLowerCase();
         const isToMerchant = log.topics?.[2]?.toLowerCase() === paddedMerchant;
         return isContract && isTransfer && isToMerchant;
@@ -1128,13 +1140,13 @@ export async function verifyBlockchainTransaction(params: {
       const actualBigInt = ethers.toBigInt(matchedLog.data);
       const expectedDecStr = expectedAmountCrypto.toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: config.decimals });
       const expectedBigInt = ethers.parseUnits(expectedDecStr, config.decimals);
-      const tolerance = (expectedBigInt * 5n) / 1000n; // 0.5% tolerance
+      const tolerance = (expectedBigInt * 1n) / 1000n; // 0.1% strict tolerance
 
       const actualAmount = parseFloat(ethers.formatUnits(actualBigInt, config.decimals));
       const sender = matchedLog.topics?.[1] ? ethers.stripZerosLeft(matchedLog.topics[1]) : receipt.from;
 
       if (actualBigInt < expectedBigInt - tolerance) {
-        const shortfall = expectedAmountCrypto - actualAmount;
+        const shortfall = Math.max(0, expectedAmountCrypto - actualAmount);
         return {
           isVerified: true,
           status: 'underpaid',
@@ -1149,7 +1161,7 @@ export async function verifyBlockchainTransaction(params: {
       }
 
       if (actualBigInt > expectedBigInt + tolerance) {
-        const excess = actualAmount - expectedAmountCrypto;
+        const excess = Math.max(0, actualAmount - expectedAmountCrypto);
         return {
           isVerified: true,
           status: 'overpaid',
@@ -1180,7 +1192,7 @@ export async function verifyBlockchainTransaction(params: {
 
     const tx = await provider.getTransaction(cleanTxHash);
     if (!tx) {
-      return { isVerified: false, status: 'failed', errorMessage: 'Transaction details could not be retrieved.' };
+      return { isVerified: false, status: 'failed', errorMessage: 'Transaction details could not be retrieved from the blockchain.' };
     }
 
     if (tx.to?.toLowerCase() !== merchantWallet.toLowerCase()) {
@@ -1194,12 +1206,12 @@ export async function verifyBlockchainTransaction(params: {
     const actualWei = tx.value;
     const expectedDecStr = expectedAmountCrypto.toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: 18 });
     const expectedWei = ethers.parseEther(expectedDecStr);
-    const tolerance = (expectedWei * 5n) / 1000n; // 0.5% tolerance
+    const tolerance = (expectedWei * 1n) / 1000n; // 0.1% tolerance
 
     const actualAmount = parseFloat(ethers.formatEther(actualWei));
 
     if (actualWei < expectedWei - tolerance) {
-      const shortfall = expectedAmountCrypto - actualAmount;
+      const shortfall = Math.max(0, expectedAmountCrypto - actualAmount);
       return {
         isVerified: true,
         status: 'underpaid',
@@ -1214,7 +1226,7 @@ export async function verifyBlockchainTransaction(params: {
     }
 
     if (actualWei > expectedWei + tolerance) {
-      const excess = actualAmount - expectedAmountCrypto;
+      const excess = Math.max(0, actualAmount - expectedAmountCrypto);
       return {
         isVerified: true,
         status: 'overpaid',
@@ -1247,7 +1259,8 @@ export async function verifyBlockchainTransaction(params: {
 
 /**
  * Real-time automatic on-chain scanner to detect incoming customer payments
- * Monitors Polygon, Ethereum, and Bitcoin networks using parallel high-speed indexers & RPCs
+ * Monitors Polygon, Ethereum, and Bitcoin networks using parallel high-speed indexers & RPCs.
+ * Accurately compares requested expected amount vs received on-chain amount, categorizing as PAID, UNDERPAID, or OVERPAID.
  */
 export async function scanForIncomingPayment(params: {
   merchantWallet: string;
@@ -1276,7 +1289,31 @@ export async function scanForIncomingPayment(params: {
 
   // Strict session timestamp threshold (allow max 15s clock grace period before invoice was created)
   const minValidTimestampMs = Math.max(0, sessionStartTimestamp - 15000);
-  const minRequiredAmount = expectedAmountCrypto * 0.985; // 1.5% max rounding tolerance
+
+  // Helper to accurately classify payment status
+  const evaluatePaymentStatus = (actualAmt: number) => {
+    const tolerance = Math.max(
+      expectedAmountCrypto * 0.001,
+      config.networkFamily === 'bitcoin' ? 0.00000001 : 0.000001
+    );
+
+    if (actualAmt < expectedAmountCrypto - tolerance) {
+      return {
+        status: 'underpaid' as const,
+        discrepancyAmount: Math.max(0, expectedAmountCrypto - actualAmt),
+      };
+    }
+    if (actualAmt > expectedAmountCrypto + tolerance) {
+      return {
+        status: 'overpaid' as const,
+        discrepancyAmount: Math.max(0, actualAmt - expectedAmountCrypto),
+      };
+    }
+    return {
+      status: 'paid' as const,
+      discrepancyAmount: 0,
+    };
+  };
 
   try {
     // 1. Bitcoin Automatic Detection (Runs Mempool.space, Blockstream, and Blockchain.info in parallel)
@@ -1295,10 +1332,9 @@ export async function scanForIncomingPayment(params: {
               const txs = await res.json();
               if (Array.isArray(txs) && txs.length > 0) {
                 for (const tx of txs) {
-                  // If confirmed, verify it occurred during the current payment session
                   if (tx.status?.confirmed && tx.status?.block_time) {
                     const txTimeMs = tx.status.block_time * 1000;
-                    if (txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+                    if (txTimeMs < minValidTimestampMs) continue;
                   }
 
                   const matchedVout = tx.vout?.find(
@@ -1306,13 +1342,17 @@ export async function scanForIncomingPayment(params: {
                   );
                   if (matchedVout) {
                     const btcAmount = (matchedVout.value || 0) / 1e8;
-                    if (btcAmount >= minRequiredAmount) {
+                    if (btcAmount > 0) {
                       const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(btcAmount);
                       return {
                         isDetected: true,
                         txHash: tx.txid,
                         customerAddress: sender,
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount: btcAmount,
+                        discrepancyAmount,
                         isConfirmed: !!tx.status?.confirmed,
                         blockNumber: tx.status?.block_height,
                       };
@@ -1336,10 +1376,9 @@ export async function scanForIncomingPayment(params: {
               const txs = await res.json();
               if (Array.isArray(txs) && txs.length > 0) {
                 for (const tx of txs) {
-                  // If confirmed, verify it occurred during current session
                   if (tx.status?.confirmed && tx.status?.block_time) {
                     const txTimeMs = tx.status.block_time * 1000;
-                    if (txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+                    if (txTimeMs < minValidTimestampMs) continue;
                   }
 
                   const matchedVout = tx.vout?.find(
@@ -1347,13 +1386,17 @@ export async function scanForIncomingPayment(params: {
                   );
                   if (matchedVout) {
                     const btcAmount = (matchedVout.value || 0) / 1e8;
-                    if (btcAmount >= minRequiredAmount) {
+                    if (btcAmount > 0) {
                       const sender = tx.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(btcAmount);
                       return {
                         isDetected: true,
                         txHash: tx.txid,
                         customerAddress: sender,
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount: btcAmount,
+                        discrepancyAmount,
                         isConfirmed: !!tx.status?.confirmed,
                         blockNumber: tx.status?.block_height,
                       };
@@ -1378,20 +1421,24 @@ export async function scanForIncomingPayment(params: {
               if (data?.txs && Array.isArray(data.txs)) {
                 for (const tx of data.txs) {
                   const txTimeMs = (tx.time || 0) * 1000;
-                  if (txTimeMs > 0 && txTimeMs < minValidTimestampMs) continue; // Ignore old historical tx
+                  if (txTimeMs > 0 && txTimeMs < minValidTimestampMs) continue;
 
                   const matchedOut = tx.out?.find(
                     (o: any) => o.addr?.toLowerCase() === cleanAddr.toLowerCase()
                   );
                   if (matchedOut) {
                     const btcAmount = (matchedOut.value || 0) / 1e8;
-                    if (btcAmount >= minRequiredAmount) {
+                    if (btcAmount > 0) {
                       const sender = tx.inputs?.[0]?.prev_out?.addr || 'Bitcoin Wallet';
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(btcAmount);
                       return {
                         isDetected: true,
                         txHash: tx.hash,
                         customerAddress: sender,
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount: btcAmount,
+                        discrepancyAmount,
                         isConfirmed: (tx.block_height || 0) > 0,
                         blockNumber: tx.block_height,
                       };
@@ -1444,10 +1491,9 @@ export async function scanForIncomingPayment(params: {
               const data = await psRes.json();
               if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
                 for (const tx of data.result) {
-                  // STRICT: Filter out any transactions before current payment session
                   const txTimestampMs = parseInt(tx.timeStamp || '0', 10) * 1000;
                   if (txTimestampMs < minValidTimestampMs) {
-                    continue; // Skip historical transaction
+                    continue;
                   }
 
                   const toAddr = (tx.to || '').toLowerCase();
@@ -1460,19 +1506,24 @@ export async function scanForIncomingPayment(params: {
                       (contract === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
                         contract === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18' ||
                         tokenSymbol === 'VERSE')) ||
-                    (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE'));
+                    (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE')) ||
+                    (expectedAsset === 'USDC' && (tokenSymbol === 'USDC' || tokenSymbol === 'USDCE'));
 
                   if (toAddr === cleanAddr.toLowerCase() && isTargetToken) {
                     const tokenDecimals = tx.tokenDecimal ? parseInt(tx.tokenDecimal, 10) : config.decimals;
                     const rawVal = ethers.toBigInt(tx.value || '0');
                     const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
 
-                    if (actualAmount >= minRequiredAmount) {
+                    if (actualAmount > 0) {
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(actualAmount);
                       return {
                         isDetected: true,
                         txHash: tx.hash,
                         customerAddress: tx.from || 'Verified Customer',
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount,
+                        discrepancyAmount,
                         isConfirmed: true,
                         blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
                       };
@@ -1496,10 +1547,9 @@ export async function scanForIncomingPayment(params: {
               const data = await psRes.json();
               if (data?.result && Array.isArray(data.result) && data.result.length > 0) {
                 for (const tx of data.result) {
-                  // STRICT: Filter out any transactions before current payment session
                   const txTimestampMs = parseInt(tx.timeStamp || '0', 10) * 1000;
                   if (txTimestampMs < minValidTimestampMs) {
-                    continue; // Skip historical transaction
+                    continue;
                   }
 
                   const toAddr = (tx.to || '').toLowerCase();
@@ -1507,12 +1557,16 @@ export async function scanForIncomingPayment(params: {
 
                   if (toAddr === cleanAddr.toLowerCase() && isSuccess) {
                     const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
-                    if (actualAmount >= minRequiredAmount) {
+                    if (actualAmount > 0) {
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(actualAmount);
                       return {
                         isDetected: true,
                         txHash: tx.hash,
                         customerAddress: tx.from || 'Verified Customer',
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount,
+                        discrepancyAmount,
                         isConfirmed: true,
                         blockNumber: tx.blockNumber ? parseInt(tx.blockNumber, 10) : undefined,
                       };
@@ -1547,10 +1601,9 @@ export async function scanForIncomingPayment(params: {
               const items = data.items || [];
               if (Array.isArray(items) && items.length > 0) {
                 for (const item of items) {
-                  // STRICT: Filter out any transfers before current payment session
                   const itemTimeMs = item.timestamp ? new Date(item.timestamp).getTime() : 0;
                   if (itemTimeMs > 0 && itemTimeMs < minValidTimestampMs) {
-                    continue; // Skip historical transfer
+                    continue;
                   }
 
                   const toAddr = (item.to?.hash || item.to || '').toLowerCase();
@@ -1564,19 +1617,24 @@ export async function scanForIncomingPayment(params: {
                         (tokenAddr === '0xc3aa16362d381282d7bfcf73812d46e300958ad8' ||
                           tokenAddr === '0x249ca82617ec3dfb2589c4c17ab7ec9765350a18' ||
                           tokenSymbol === 'VERSE')) ||
-                      (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE')));
+                      (expectedAsset === 'USDT' && (tokenSymbol === 'USDT' || tokenSymbol === 'USDTE')) ||
+                      (expectedAsset === 'USDC' && (tokenSymbol === 'USDC' || tokenSymbol === 'USDCE')));
 
                   if (isMatch) {
                     const tokenDecimals = item.token?.decimals ? parseInt(item.token.decimals, 10) : config.decimals;
                     const rawVal = ethers.toBigInt(item.total?.value || item.value || '0');
                     const actualAmount = parseFloat(ethers.formatUnits(rawVal, tokenDecimals));
 
-                    if (actualAmount >= minRequiredAmount) {
+                    if (actualAmount > 0) {
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(actualAmount);
                       return {
                         isDetected: true,
                         txHash: item.transaction_hash,
                         customerAddress: item.from?.hash || 'Verified Customer',
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount,
+                        discrepancyAmount,
                         isConfirmed: true,
                         blockNumber: item.block_number,
                       };
@@ -1601,10 +1659,9 @@ export async function scanForIncomingPayment(params: {
               const items = data.items || [];
               if (Array.isArray(items) && items.length > 0) {
                 for (const tx of items) {
-                  // STRICT: Filter out any transactions before current payment session
                   const txTimeMs = tx.timestamp ? new Date(tx.timestamp).getTime() : 0;
                   if (txTimeMs > 0 && txTimeMs < minValidTimestampMs) {
-                    continue; // Skip historical transaction
+                    continue;
                   }
 
                   const toAddr = (tx.to?.hash || tx.to || '').toLowerCase();
@@ -1612,12 +1669,16 @@ export async function scanForIncomingPayment(params: {
 
                   if (toAddr === cleanAddr.toLowerCase() && isOk) {
                     const actualAmount = parseFloat(ethers.formatEther(tx.value || '0'));
-                    if (actualAmount >= minRequiredAmount) {
+                    if (actualAmount > 0) {
+                      const { status, discrepancyAmount } = evaluatePaymentStatus(actualAmount);
                       return {
                         isDetected: true,
                         txHash: tx.hash,
                         customerAddress: tx.from?.hash || 'Verified Customer',
+                        status,
+                        expectedAmount: expectedAmountCrypto,
                         actualAmount,
+                        discrepancyAmount,
                         isConfirmed: true,
                         blockNumber: tx.block_number,
                       };
@@ -1632,7 +1693,7 @@ export async function scanForIncomingPayment(params: {
       })()
     );
 
-    // Task 3: Direct EVM RPC Logs Query (Limited strictly to very latest blocks)
+    // Task 3: Direct EVM RPC Logs Query (Limited strictly to latest blocks)
     if (config.contractAddress) {
       evmPromises.push(
         (async () => {
@@ -1643,7 +1704,6 @@ export async function scanForIncomingPayment(params: {
             const logs = isPolygon
               ? await executeWithPolygonFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  // Polygon has 2s block times; 6 blocks ≈ 12s
                   const fromBlock = Math.max(0, currentBlock - 6);
                   return await provider.getLogs({
                     address: config.contractAddress,
@@ -1654,7 +1714,6 @@ export async function scanForIncomingPayment(params: {
                 })
               : await executeWithEthereumFallback(async (provider) => {
                   const currentBlock = await provider.getBlockNumber();
-                  // Ethereum has 12s block times; 2 blocks ≈ 24s
                   const fromBlock = Math.max(0, currentBlock - 2);
                   return await provider.getLogs({
                     address: config.contractAddress,
@@ -1669,15 +1728,19 @@ export async function scanForIncomingPayment(params: {
               const rawVal = ethers.toBigInt(latestLog.data);
               const actualAmount = parseFloat(ethers.formatUnits(rawVal, config.decimals));
 
-              if (actualAmount >= minRequiredAmount) {
+              if (actualAmount > 0) {
                 const sender = latestLog.topics?.[1]
                   ? ethers.stripZerosLeft(latestLog.topics[1])
                   : 'Customer Wallet';
+                const { status, discrepancyAmount } = evaluatePaymentStatus(actualAmount);
                 return {
                   isDetected: true,
                   txHash: latestLog.transactionHash,
                   customerAddress: sender,
+                  status,
+                  expectedAmount: expectedAmountCrypto,
                   actualAmount,
+                  discrepancyAmount,
                   isConfirmed: true,
                   blockNumber: latestLog.blockNumber,
                 };
@@ -1689,7 +1752,7 @@ export async function scanForIncomingPayment(params: {
       );
     }
 
-    // Wait for all parallel EVM checks and only accept REAL NEW transactions with valid hashes
+    // Wait for all parallel EVM checks and only accept REAL transactions with valid hashes
     const results = await Promise.allSettled(evmPromises);
     for (const res of results) {
       if (res.status === 'fulfilled' && res.value && res.value.isDetected && res.value.txHash) {

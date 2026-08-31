@@ -617,8 +617,8 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-cyan-500"></span>
                   </div>
-                  <span className="text-xs font-extrabold tracking-wide uppercase text-cyan-300">
-                    WAITING FOR PAYMENT
+                  <span className="text-xs font-black tracking-wider uppercase text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/30">
+                    PENDING PAYMENT
                   </span>
                 </div>
                 <button
@@ -716,44 +716,93 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
             }`}>
               <CheckCircle2 className="w-9 h-9" />
             </div>
-            <div className="space-y-1">
-              <span className={`inline-block px-3 py-1 text-xs font-extrabold tracking-wider uppercase rounded-full border ${
-                verifiedTx?.status === 'underpaid'
-                  ? 'bg-amber-950/60 border-amber-500/40 text-amber-400'
-                  : verifiedTx?.status === 'overpaid'
-                  ? 'bg-purple-950/60 border-purple-500/40 text-purple-400'
-                  : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400'
-              }`}>
-                {verifiedTx?.status === 'underpaid'
-                  ? 'Underpaid Settlement ✓'
-                  : verifiedTx?.status === 'overpaid'
-                  ? 'Overpaid Settlement ✓'
-                  : `${getTranslation(language, 'paymentApproved')} ✓`}
-              </span>
-              <div className="text-3xl font-extrabold font-display text-white mt-2">
-                {formattedFiat}
-              </div>
-              <div className="text-xs font-mono font-bold text-amber-400">
-                {verifiedTx ? `${formatCryptoAmount(verifiedTx.amountCrypto, cryptoAsset)} ${cryptoAsset}` : formattedCrypto}
-              </div>
-              {verifiedTx?.discrepancyNote && (
-                <div className={`mt-2 p-2 rounded-lg text-[11px] font-mono border ${
-                  verifiedTx.status === 'underpaid'
-                    ? 'bg-amber-950/40 border-amber-800 text-amber-300'
-                    : 'bg-purple-950/40 border-purple-800 text-purple-300'
+
+            <div className="space-y-2 w-full">
+              {/* Status Header Badge */}
+              <div>
+                <span className={`inline-block px-3.5 py-1 text-xs font-black tracking-wider uppercase rounded-full border ${
+                  verifiedTx?.status === 'underpaid'
+                    ? 'bg-amber-950/80 border-amber-500 text-amber-300 shadow-lg'
+                    : verifiedTx?.status === 'overpaid'
+                    ? 'bg-purple-950/80 border-purple-500 text-purple-300 shadow-lg'
+                    : 'bg-emerald-950/80 border-emerald-500 text-emerald-300 shadow-lg'
                 }`}>
-                  {verifiedTx.discrepancyNote}
+                  {verifiedTx?.status === 'underpaid'
+                    ? 'UNDERPAID'
+                    : verifiedTx?.status === 'overpaid'
+                    ? 'OVERPAID'
+                    : 'APPROVED / PAID'}
+                </span>
+              </div>
+
+              {/* Amount Comparison Card */}
+              <div className="bg-[#161824] border border-zinc-800 rounded-2xl p-4 text-center space-y-2.5">
+                <div className="grid grid-cols-2 gap-2 text-left">
+                  <div className="p-2.5 bg-[#0e1017] rounded-xl border border-zinc-800/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">Expected:</span>
+                    <div className="text-base font-extrabold text-white">
+                      {fiatConfig.symbol}{(amountFiat).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[11px] font-mono text-zinc-400 truncate">
+                      {formatCryptoAmount(verifiedTx?.expectedAmountCrypto || amountCrypto, cryptoAsset)} {cryptoAsset}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 bg-[#0e1017] rounded-xl border border-zinc-800/80">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 block mb-0.5">Received:</span>
+                    <div className={`text-base font-extrabold ${
+                      verifiedTx?.status === 'underpaid'
+                        ? 'text-amber-400'
+                        : verifiedTx?.status === 'overpaid'
+                        ? 'text-purple-400'
+                        : 'text-emerald-400'
+                    }`}>
+                      {fiatConfig.symbol}{((verifiedTx?.amountCrypto ?? amountCrypto) * cryptoRate).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-[11px] font-mono text-amber-400 truncate">
+                      {formatCryptoAmount(verifiedTx?.amountCrypto || amountCrypto, cryptoAsset)} {cryptoAsset}
+                    </div>
+                  </div>
                 </div>
-              )}
+
+                {/* Extra / Remaining Row */}
+                {verifiedTx?.status === 'overpaid' && (
+                  <div className="flex items-center justify-between p-2.5 bg-purple-950/40 border border-purple-800/60 rounded-xl text-xs">
+                    <span className="font-bold text-purple-300">Extra Received:</span>
+                    <span className="font-mono font-bold text-purple-200">
+                      +{formatCryptoAmount(Math.max(0, (verifiedTx.amountCrypto) - (verifiedTx.expectedAmountCrypto || amountCrypto)), cryptoAsset)} {cryptoAsset} ({fiatConfig.symbol}{(Math.max(0, (verifiedTx.amountCrypto) - (verifiedTx.expectedAmountCrypto || amountCrypto)) * cryptoRate).toFixed(2)})
+                    </span>
+                  </div>
+                )}
+
+                {verifiedTx?.status === 'underpaid' && (
+                  <div className="flex items-center justify-between p-2.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-xs">
+                    <span className="font-bold text-amber-300">Remaining Shortfall:</span>
+                    <span className="font-mono font-bold text-amber-200">
+                      -{formatCryptoAmount(Math.max(0, (verifiedTx.expectedAmountCrypto || amountCrypto) - verifiedTx.amountCrypto), cryptoAsset)} {cryptoAsset} ({fiatConfig.symbol}{(Math.max(0, (verifiedTx.expectedAmountCrypto || amountCrypto) - verifiedTx.amountCrypto) * cryptoRate).toFixed(2)})
+                    </span>
+                  </div>
+                )}
+
+                {verifiedTx?.discrepancyNote && (
+                  <div className={`p-2 rounded-lg text-[11px] font-mono text-left border ${
+                    verifiedTx.status === 'underpaid'
+                      ? 'bg-amber-950/30 border-amber-800/40 text-amber-300'
+                      : 'bg-purple-950/30 border-purple-800/40 text-purple-300'
+                  }`}>
+                    {verifiedTx.discrepancyNote}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="w-full p-3 bg-[#161822] border border-zinc-800 rounded-xl text-left text-xs space-y-1.5">
               <div className="flex items-center justify-between text-zinc-400">
                 <span>{getTranslation(language, 'status')}:</span>
-                <span className={`font-semibold capitalize ${
+                <span className={`font-black uppercase tracking-wider ${
                   verifiedTx?.status === 'underpaid' ? 'text-amber-400' : verifiedTx?.status === 'overpaid' ? 'text-purple-400' : 'text-emerald-400'
                 }`}>
-                  {verifiedTx?.status || 'Settled On-Chain'} ✓
+                  {verifiedTx?.status === 'underpaid' ? 'UNDERPAID' : verifiedTx?.status === 'overpaid' ? 'OVERPAID' : 'APPROVED / PAID'} ✓
                 </span>
               </div>
               <div className="flex items-center justify-between text-zinc-400">
@@ -767,7 +816,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                     href={`${EXPLORER_URLS[assetConfig.network]}/tx/${verifiedTx?.txHash || txHashInput}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1"
+                    className="text-amber-400 hover:text-amber-300 font-mono text-[11px] flex items-center gap-1 font-bold"
                   >
                     <span>{formatAddress(verifiedTx?.txHash || txHashInput, 4)}</span>
                     <ExternalLink className="w-3 h-3" />
@@ -784,7 +833,7 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
                 onClick={() => onPaymentSuccess(verifiedTx)}
                 className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-extrabold text-sm rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 cursor-pointer mt-2"
               >
-                <span>View Receipt Now</span>
+                <span>View Official Receipt</span>
                 <ArrowUpRight className="w-4 h-4" />
               </button>
             )}
@@ -798,8 +847,11 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
               <AlertCircle className="w-8 h-8" />
             </div>
             <div className="space-y-1">
-              <h3 className="text-base font-bold font-display text-white">
-                Payment Verification Failed
+              <span className="inline-block px-3 py-1 text-xs font-black tracking-wider uppercase rounded-full bg-red-950 border border-red-500 text-red-300">
+                INVALID PAYMENT / FAILED
+              </span>
+              <h3 className="text-base font-bold font-display text-white mt-1">
+                Blockchain Verification Unsuccessful
               </h3>
               <p className="text-xs text-red-300 max-w-xs">{errorMsg}</p>
             </div>
