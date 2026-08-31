@@ -750,6 +750,9 @@ export default function App() {
             isPro={isPro}
             onOpenInstallPrompt={() => setShowPwaInstallModal(true)}
             onLockTerminal={() => setIsTerminalLocked(true)}
+            transactions={transactions}
+            cryptoRatesUsd={cryptoRatesUsd}
+            cryptoInFiatRates={cryptoInFiatRates}
           />
         )}
       </main>

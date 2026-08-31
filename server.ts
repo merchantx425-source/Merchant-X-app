@@ -25,8 +25,8 @@ interface RatingRecord {
 let storedRatings: RatingRecord[] = [];
 
 /**
- * AI Crypto Merchant Assistant Endpoint
- * Connects to Gemini API server-side using @google/genai SDK
+ * AI Business Assistant Endpoint
+ * Connects to Gemini API server-side using @google/genai SDK with gemini-3.7-flash
  */
 app.post('/api/ai/assistant', async (req, res) => {
   try {
@@ -40,63 +40,202 @@ app.post('/api/ai/assistant', async (req, res) => {
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
+    const cleanPrompt = prompt.trim();
+    const currSym = context?.fiatSymbol || '$';
+    const currCode = context?.fiatCurrency || 'USD';
+    const clientTime = context?.clientTime || new Date().toISOString();
+    const m = context?.metrics || {};
+
     if (!apiKey) {
-      // Return helpful offline response if key is not configured in sandbox
+      // Return structured answer from deterministic analytics engine when GEMINI_API_KEY is not set
+      const fallbackAnswer = generateServerAnalyticsAnswer(cleanPrompt, context);
       return res.status(200).json({
         success: true,
-        answer: `I am your Merchant X Crypto Assistant. I see your active terminal records. To enable real-time Gemini AI queries, please ensure GEMINI_API_KEY is configured. In the meantime, you have recorded ${context?.transactions?.length || 0} transactions in your active ledger.`,
+        answer: fallbackAnswer,
       });
     }
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
 
-    const systemInstruction = `You are the Merchant X Crypto Merchant AI Assistant, built directly into the Merchant X non-custodial Point-of-Sale terminal.
-Your job is to assist merchants with their payments, settlement balances, transaction records, crypto conversions, and payment discrepancy inquiries using accurate, natural, professional language.
+    const systemInstruction = `You are the Merchant X AI Business Assistant — an intelligent, read-only analytics and financial advisor built inside the Merchant X non-custodial POS terminal.
+Your purpose is to answer merchant questions regarding their real sales, payments, transactions, revenue, tokens, customer volumes, and analytics with 100% precision.
 
 CRITICAL RULES:
-1. DO NOT invent or hallucinate fake transactions, fake balances, fake prices, or fake blockchain information.
-2. Rely strictly on the real live merchant context provided below (transactions ledger, balances, current live exchange rates, fiat currency, and merchant configuration).
-3. If the merchant asks for fiat conversions (e.g., "How much is 50 USDT in naira?"), use the exact exchange rates in the provided context or formula: amount * rate.
-4. For questions regarding "today", "this week", or "this month", filter the transaction timestamps accurately relative to the current timestamp (${new Date().toISOString()}).
-5. Clearly distinguish between 'paid', 'underpaid', 'overpaid', 'pending', and 'failed' transactions when asked.
-6. Provide concise, well-formatted answers with bold highlights, clean bullet points, or crypto amounts when helpful.
+1. USE ONLY REAL DATA: Rely strictly and exclusively on the merchant's real business metrics and ledger transactions provided below. DO NOT invent, hallucinate, extrapolate fake transactions, fake amounts, fake customers, or fake dates.
+2. UNAVAILABLE DATA: If the requested timeframe, asset, or information has no transactions or is not available, clearly state that no data was recorded for that period or query.
+3. READ-ONLY SCOPE: You are strictly read-only. You cannot alter wallet keys, change balances, delete transactions, or modify system settings.
+4. TEMPORAL ACCURACY: Understand relative dates relative to the merchant's local current time:
+   - Client Local Time: ${clientTime}
+   - "today": transactions recorded on the current calendar day.
+   - "yesterday": transactions recorded on the previous calendar day.
+   - "this week": transactions since Monday of the current week.
+   - "this month": transactions from the 1st of the current month until now.
+   - "last month": transactions during the previous calendar month.
+   - "this year": transactions since Jan 1st of the current year.
+5. FORMATTING & CLARITY:
+   - Format monetary numbers clearly with symbols (e.g. ${currSym}1,250.00 ${currCode}) and token quantities (e.g. 50,000 VERSE, 120.50 USDT).
+   - Use clean Markdown formatting: headings, bold metric values, compact markdown tables, and bullet points.
+   - For comparisons (e.g., this month vs last month), present a clean side-by-side table and explain whether revenue is increasing or decreasing.
+   - For business insights or "What should I pay attention to?", give actionable, professional observations based on real payment token mix, average transaction value, or discrepancies (underpaid/overpaid).
 
-MERCHANT LIVE CONTEXT:
-- Current Server Time (UTC): ${new Date().toISOString()}
-- Merchant Display Name: ${context?.merchantName || 'Merchant Terminal'}
-- Default Fiat Currency: ${context?.fiatCurrency || 'NGN'} (${context?.fiatSymbol || '₦'})
-- Live Rates (1 Crypto in ${context?.fiatCurrency || 'NGN'}): ${JSON.stringify(context?.liveRates || {})}
-- Live Rates in USD: ${JSON.stringify(context?.liveRatesUsd || {})}
-- Real On-Chain Balances: ${JSON.stringify(context?.balances || {})}
-- Connected Settlement Addresses: EVM: ${context?.evmAddress || 'Not set'}, BTC: ${context?.btcAddress || 'Not set'}
-- Real Transactions Ledger (${context?.transactions?.length || 0} records):
-${JSON.stringify(context?.transactions || [], null, 2)}
+MERCHANT REAL BUSINESS CONTEXT & PRE-CALCULATED LEDGER METRICS:
+- Merchant Name: ${context?.merchantName || 'Merchant X Terminal'}
+- Store Location: ${context?.merchantLocation || 'Global'}
+- Display Currency: ${currCode} (${currSym})
+- All-Time Total Revenue: ${currSym}${Number(m.totalRevenueFiat || 0).toLocaleString()}
+- Total Transactions Count: ${m.totalTransactionsCount || 0}
+- Completed Paid Transactions: ${m.paidCount || 0}
+- Underpaid Payments: ${m.underpaidCount || 0}
+- Overpaid Payments: ${m.overpaidCount || 0}
+- Pending Transactions: ${m.pendingCount || 0}
+- Failed Transactions: ${m.failedCount || 0}
+
+TIMEFRAME REVENUE BREAKDOWN:
+- Today's Sales: ${currSym}${Number(m.todayRevenueFiat || 0).toLocaleString()} (${m.todayCount || 0} txs)
+- Yesterday's Sales: ${currSym}${Number(m.yesterdayRevenueFiat || 0).toLocaleString()} (${m.yesterdayCount || 0} txs)
+- This Week's Sales: ${currSym}${Number(m.thisWeekRevenueFiat || 0).toLocaleString()} (${m.thisWeekCount || 0} txs)
+- This Month's Sales: ${currSym}${Number(m.thisMonthRevenueFiat || 0).toLocaleString()} (${m.thisMonthCount || 0} txs)
+- Last Month's Sales: ${currSym}${Number(m.lastMonthRevenueFiat || 0).toLocaleString()} (${m.lastMonthCount || 0} txs)
+- This Year's Sales: ${currSym}${Number(m.thisYearRevenueFiat || 0).toLocaleString()} (${m.thisYearCount || 0} txs)
+- Month-over-Month Change: ${m.monthOverMonthChangePercent != null ? m.monthOverMonthChangePercent.toFixed(1) + '%' : 'N/A'} (Trend: ${m.salesTrend || 'N/A'})
+
+BUSINESS HIGHLIGHTS:
+- Average Transaction Value (ATV): ${currSym}${Number(m.averageTransactionValueFiat || 0).toLocaleString()}
+- Best Sales Day: ${m.bestSalesDay ? `${m.bestSalesDay.dateStr} with ${currSym}${Number(m.bestSalesDay.revenueFiat).toLocaleString()} (${m.bestSalesDay.count} txs)` : 'No sales day recorded yet'}
+- Largest Single Transaction: ${m.biggestTransaction ? `${currSym}${Number(m.biggestTransaction.amountFiat).toLocaleString()} (${m.biggestTransaction.amountCrypto} ${m.biggestTransaction.cryptoAsset}) on ${m.biggestTransaction.formattedDate}` : 'None'}
+- Most Used Payment Token: ${m.mostUsedToken ? `${m.mostUsedToken.symbol} (${m.mostUsedToken.count} payments, ${currSym}${Number(m.mostUsedToken.totalFiat).toLocaleString()})` : 'None'}
+
+TOKEN BREAKDOWN:
+${JSON.stringify(m.tokenBreakdown || {}, null, 2)}
+
+RECENT TRANSACTIONS (Up to 10):
+${JSON.stringify(m.recentTransactions || [], null, 2)}
+
+SETTLEMENT ADDRESSES:
+- EVM Address: ${context?.walletState?.evmAddress || 'Not set'}
+- Bitcoin Address: ${context?.walletState?.btcAddress || 'Not set'}
+- Subscription Plan: ${context?.subscriptionState?.plan || 'Free'}
 `;
 
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt.trim(),
+      model: 'gemini-3.7-flash',
+      contents: cleanPrompt,
       config: {
         systemInstruction,
         temperature: 0.2,
       },
     });
 
-    const answer = response.text || 'I could not generate an answer at this time. Please try again.';
+    const answer = response.text || generateServerAnalyticsAnswer(cleanPrompt, context);
 
     return res.status(200).json({
       success: true,
       answer,
     });
   } catch (err: any) {
-    console.error('[AI Assistant Error]:', err.message || err);
-    return res.status(500).json({
-      success: false,
-      error: 'Failed to process AI assistant request.',
-      details: err.message || 'Unknown error',
+    console.error('[AI Assistant Server Error]:', err.message || err);
+    // Fallback to local server analytics on any transient error
+    const fallbackAnswer = generateServerAnalyticsAnswer(req.body?.prompt || '', req.body?.context || {});
+    return res.status(200).json({
+      success: true,
+      answer: fallbackAnswer,
     });
   }
 });
+
+/**
+ * Server-side Deterministic Analytics Engine for fallback answers
+ */
+function generateServerAnalyticsAnswer(prompt: string, context: any): string {
+  const q = (prompt || '').toLowerCase().trim();
+  const m = context?.metrics || {};
+  const sym = context?.fiatSymbol || '$';
+  const curr = context?.fiatCurrency || 'USD';
+
+  const fmt = (val: number) => {
+    return `${sym}${Number(val || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
+  if (q.includes('today')) {
+    if (!m.todayCount) {
+      return `### 📅 Today's Sales Performance\n\nYou have recorded **0 transactions** today. Total sales today is **${fmt(0)}**.\n\n*Transactions processed on the POS screen will update this figure immediately.*`;
+    }
+    return `### 📅 Today's Sales Performance\n\n- **Today's Revenue:** **${fmt(m.todayRevenueFiat)}**\n- **Transactions Completed:** **${m.todayCount}**\n- **Average Ticket Today:** **${fmt(m.todayRevenueFiat / m.todayCount)}**`;
+  }
+
+  if (q.includes('yesterday')) {
+    return `### 📅 Yesterday's Sales Performance\n\n- **Revenue:** **${fmt(m.yesterdayRevenueFiat)}**\n- **Transactions:** **${m.yesterdayCount || 0}**`;
+  }
+
+  if (q.includes('this week') || q.includes('week')) {
+    return `### 📊 This Week's Sales\n\n- **Revenue This Week:** **${fmt(m.thisWeekRevenueFiat)}**\n- **Transactions Count:** **${m.thisWeekCount || 0}**`;
+  }
+
+  if (q.includes('this month') || (q.includes('month') && !q.includes('last month') && !q.includes('compare'))) {
+    return `### 🗓️ This Month's Revenue\n\n- **Month-to-Date Revenue:** **${fmt(m.thisMonthRevenueFiat)}**\n- **Total Transactions:** **${m.thisMonthCount || 0}**`;
+  }
+
+  if (q.includes('compare') || q.includes('last month') || q.includes('increasing') || q.includes('decreasing') || q.includes('trend')) {
+    let comp = '';
+    if (m.lastMonthRevenueFiat > 0) {
+      const pct = m.monthOverMonthChangePercent || 0;
+      comp = pct >= 0 ? `📈 **Up +${pct.toFixed(1)}%** compared to last month.` : `📉 **Down ${pct.toFixed(1)}%** compared to last month.`;
+    } else {
+      comp = `Last month had no recorded sales. This month has **${fmt(m.thisMonthRevenueFiat)}** across **${m.thisMonthCount || 0}** transactions.`;
+    }
+
+    return `### 📈 Month-over-Month Sales Comparison\n\n| Period | Revenue | Transactions |\n| :--- | :--- | :--- |\n| **This Month** | **${fmt(m.thisMonthRevenueFiat)}** | ${m.thisMonthCount || 0} txs |\n| **Last Month** | **${fmt(m.lastMonthRevenueFiat)}** | ${m.lastMonthCount || 0} txs |\n\n**Trend Insight:** ${comp}`;
+  }
+
+  if (q.includes('best') || q.includes('highest day')) {
+    if (!m.bestSalesDay) return `No transaction records available yet to determine your best performing day.`;
+    return `### 🏆 Best Performing Sales Day\n\n- **Date:** **${m.bestSalesDay.dateStr}**\n- **Daily Revenue:** **${fmt(m.bestSalesDay.revenueFiat)}**\n- **Payments Processed:** **${m.bestSalesDay.count} transactions**`;
+  }
+
+  if (q.includes('biggest') || q.includes('largest')) {
+    if (!m.biggestTransaction) return `No transactions recorded yet in your terminal ledger.`;
+    const bt = m.biggestTransaction;
+    return `### 💎 Largest Recorded Transaction\n\n- **Amount:** **${fmt(bt.amountFiat)}** (${bt.amountCrypto} ${bt.cryptoAsset})\n- **Reference:** \`${bt.reference}\`\n- **Date:** ${bt.formattedDate} at ${bt.formattedTime}\n- **Network:** ${bt.network} (${bt.status})`;
+  }
+
+  if (q.includes('underpaid') || q.includes('overpaid') || q.includes('discrepanc')) {
+    return `### ⚖️ Payment Discrepancy Overview\n\n- **Underpaid Transactions:** **${m.underpaidCount || 0}**\n- **Overpaid Transactions:** **${m.overpaidCount || 0}**\n- **Exact 100% Paid:** **${m.paidCount || 0}**\n- **Pending / Incomplete:** **${m.pendingCount || 0}**`;
+  }
+
+  if (q.includes('recent') || q.includes('latest') || q.includes('show me my recent')) {
+    if (!m.recentTransactions || m.recentTransactions.length === 0) {
+      return `You have no recorded transactions yet. New customer payments will automatically appear in your ledger.`;
+    }
+    const table = m.recentTransactions.slice(0, 5).map(
+      (tx: any) => `| \`${tx.reference}\` | **${fmt(tx.amountFiat)}** | ${tx.amountCrypto} ${tx.cryptoAsset} | \`${(tx.status || 'PAID').toUpperCase()}\` | ${tx.date} |`
+    ).join('\n');
+    return `### 🕒 Recent 5 Transactions\n\n| Ref | Amount (${curr}) | Crypto | Status | Date |\n| :--- | :--- | :--- | :--- | :--- |\n${table}`;
+  }
+
+  if (q.includes('token') || q.includes('verse') || q.includes('usdt') || q.includes('btc') || q.includes('eth') || q.includes('usdc')) {
+    const tokens = Object.entries(m.tokenBreakdown || {});
+    if (tokens.length === 0) {
+      return `No crypto payments have been recorded yet. Merchant X supports **VERSE, USDT, USDC, ETH, POL, and BTC**.`;
+    }
+    const rows = tokens.map(
+      ([symb, data]: [string, any]) => `| **${symb}** | ${data.count} txs | ${data.totalCrypto} ${symb} | **${fmt(data.totalFiat)}** |`
+    ).join('\n');
+    return `### 🪙 Cryptocurrency Breakdown\n\n| Asset | Volume | Total Received | Fiat Value (${curr}) |\n| :--- | :--- | :--- | :--- |\n${rows}\n\n**Most Used Token:** **${m.mostUsedToken?.symbol || 'N/A'}**`;
+  }
+
+  if (q.includes('average') || q.includes('atv')) {
+    return `### 🏷️ Average Transaction Value (ATV)\n\n- **Average Ticket:** **${fmt(m.averageTransactionValueFiat)}**\n- **Total Completed Payments:** **${m.paidCount + m.overpaidCount + m.underpaidCount}**\n- **Total Revenue:** **${fmt(m.totalRevenueFiat)}**`;
+  }
+
+  return `### 📊 Merchant X Business Performance Summary\n\n- **Total Revenue:** **${fmt(m.totalRevenueFiat)}**\n- **Completed Transactions:** **${m.paidCount + m.overpaidCount + m.underpaidCount}**\n- **Today's Revenue:** **${fmt(m.todayRevenueFiat)}** (${m.todayCount || 0} txs)\n- **This Month's Revenue:** **${fmt(m.thisMonthRevenueFiat)}** (${m.thisMonthCount || 0} txs)\n- **Average Ticket Size:** **${fmt(m.averageTransactionValueFiat)}**\n- **Top Crypto Token:** **${m.mostUsedToken?.symbol || 'N/A'}**\n\n💡 *Ask specific questions like "Today's sales", "What was my biggest transaction?", or "Compare sales with last month".*`;
+}
 
 /**
  * 5-Star Ratings & Feedback Endpoints

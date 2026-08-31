@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme } from '../types/merchant';
+import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme, TransactionRecord } from '../types/merchant';
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
 import {
@@ -19,6 +19,8 @@ import { BiometricModal } from './BiometricModal';
 import { VideoTutorialModal } from './Tutorial/VideoTutorialModal';
 import { FeedbackModal } from './Feedback/FeedbackModal';
 import { MerchantXLogo } from './MerchantXLogo';
+import { AIBusinessAssistantCard } from './AIBusinessAssistant/AIBusinessAssistantCard';
+import { AIBusinessAssistantModal } from './AIBusinessAssistant/AIBusinessAssistantModal';
 import {
   Wallet,
   Receipt,
@@ -70,6 +72,9 @@ interface SettingsProps {
   isPro?: boolean;
   onOpenInstallPrompt?: () => void;
   onLockTerminal?: () => void;
+  transactions?: TransactionRecord[];
+  cryptoRatesUsd?: Record<string, number>;
+  cryptoInFiatRates?: Record<string, number>;
 }
 
 const RECEIPT_THEMES: { id: ReceiptTheme; name: string; previewColor: string }[] = [
@@ -94,11 +99,16 @@ export const Settings: React.FC<SettingsProps> = ({
   isPro = false,
   onOpenInstallPrompt,
   onLockTerminal,
+  transactions = [],
+  cryptoRatesUsd = {},
+  cryptoInFiatRates = {},
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [showAIAssistant, setShowAIAssistant] = useState(false);
+  const [aiInitialPrompt, setAiInitialPrompt] = useState<string | null>(null);
   const [copiedShare, setCopiedShare] = useState(false);
   const [biometricInfo, setBiometricInfo] = useState<{
     available: boolean;
@@ -304,7 +314,17 @@ export const Settings: React.FC<SettingsProps> = ({
         </div>
       </div>
 
-      {/* 2. SUBSCRIPTION PLAN */}
+      {/* 2. AI BUSINESS ASSISTANT */}
+      <AIBusinessAssistantCard
+        transactions={transactions}
+        settings={settings}
+        onOpenAssistant={(prompt) => {
+          setAiInitialPrompt(prompt || null);
+          setShowAIAssistant(true);
+        }}
+      />
+
+      {/* 3. SUBSCRIPTION PLAN */}
       {onOpenSubscription && (
         <div className="space-y-2">
           <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center justify-between">
@@ -1048,6 +1068,20 @@ export const Settings: React.FC<SettingsProps> = ({
       </div>
 
       {/* Modals */}
+      <AIBusinessAssistantModal
+        isOpen={showAIAssistant}
+        onClose={() => {
+          setShowAIAssistant(false);
+          setAiInitialPrompt(null);
+        }}
+        transactions={transactions}
+        settings={settings}
+        walletState={walletState}
+        subscriptionState={subscriptionState}
+        cryptoRatesUsd={cryptoRatesUsd}
+        cryptoInFiatRates={cryptoInFiatRates}
+        initialPrompt={aiInitialPrompt}
+      />
       <AppUpdateNotification
         forceOpenModal={showUpdateModal}
         onCloseModal={() => setShowUpdateModal(false)}
