@@ -45,8 +45,17 @@ import {
   HelpCircle,
   Star,
   ExternalLink,
+  RefreshCw,
 } from 'lucide-react';
-import { isStandalone } from '../services/pwaService';
+import {
+  isStandalone,
+  checkForAppUpdates,
+  subscribeAppUpdate,
+  CURRENT_CLIENT_VERSION,
+  AppUpdateInfo,
+  getAppUpdateState,
+} from '../services/pwaService';
+import { AppUpdateNotification } from './AppUpdateNotification';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -106,6 +115,10 @@ export const Settings: React.FC<SettingsProps> = ({
   const [terminalPinInput, setTerminalPinInput] = useState(() => getStoredTerminalPin() || '');
   const [savedPinNotice, setSavedPinNotice] = useState(false);
   const [appInstalled, setAppInstalled] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<AppUpdateInfo>(() => getAppUpdateState());
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<string | null>(null);
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
   const lang = settings.language;
 
@@ -114,7 +127,36 @@ export const Settings: React.FC<SettingsProps> = ({
       setBiometricInfo(res);
     });
     setAppInstalled(isStandalone());
+
+    const unsubscribe = subscribeAppUpdate((info) => {
+      setUpdateInfo(info);
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, []);
+
+  const handleCheckForUpdates = async () => {
+    setIsCheckingUpdate(true);
+    setUpdateCheckStatus(null);
+
+    try {
+      const res = await checkForAppUpdates(true);
+      if (res.hasUpdate) {
+        setShowUpdateModal(true);
+        setUpdateCheckStatus(`New version v${res.latestVersion} available!`);
+      } else {
+        setUpdateCheckStatus('Merchant X is up to date (v' + CURRENT_CLIENT_VERSION + ')');
+        setTimeout(() => setUpdateCheckStatus(null), 4000);
+      }
+    } catch {
+      setUpdateCheckStatus('Merchant X is up to date (v' + CURRENT_CLIENT_VERSION + ')');
+      setTimeout(() => setUpdateCheckStatus(null), 4000);
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   // Biometric toggle handler
   const handleToggleBiometric = async () => {
@@ -881,6 +923,61 @@ export const Settings: React.FC<SettingsProps> = ({
             </button>
           )}
 
+          {/* Check for Updates & Version */}
+          <div className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-5 h-5 rounded-full bg-amber-500/10 flex items-center justify-center text-amber-400">
+                <RefreshCw className={`w-4 h-4 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-white flex items-center gap-2">
+                  <span>App Version & Updates</span>
+                  <span className="px-1.5 py-0.2 bg-zinc-800 border border-zinc-700 text-zinc-300 text-[10px] font-mono font-bold rounded">
+                    v{CURRENT_CLIENT_VERSION}
+                  </span>
+                  {updateInfo.hasUpdate && (
+                    <span className="px-1.5 py-0.2 bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[9px] font-bold uppercase rounded animate-pulse">
+                      Update Ready
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {updateCheckStatus ? (
+                    <span className={updateInfo.hasUpdate ? 'text-amber-400 font-medium' : 'text-emerald-400 font-medium'}>
+                      {updateCheckStatus}
+                    </span>
+                  ) : updateInfo.hasUpdate ? (
+                    <span className="text-amber-400 font-medium">New version v{updateInfo.latestVersion} available</span>
+                  ) : (
+                    'Automatic background update detection active'
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {updateInfo.hasUpdate ? (
+                <button
+                  type="button"
+                  onClick={() => setShowUpdateModal(true)}
+                  className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold text-xs rounded-xl shadow-md transition-all active:scale-95 cursor-pointer"
+                >
+                  Update
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCheckForUpdates}
+                  disabled={isCheckingUpdate}
+                  className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white font-semibold text-xs rounded-xl border border-zinc-700 transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isCheckingUpdate ? 'animate-spin text-amber-400' : ''}`} />
+                  <span>{isCheckingUpdate ? 'Checking...' : 'Check'}</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={handleShareApp}
@@ -936,11 +1033,25 @@ export const Settings: React.FC<SettingsProps> = ({
           <MerchantXLogo size="xs" />
           <span className="font-extrabold font-display text-white text-sm">Merchant X</span>
         </div>
-        <div className="text-xs text-zinc-500 font-mono">Version 1.0.0</div>
-        <div className="text-xs text-zinc-600">© 2026 Merchant X • All Rights Reserved</div>
+        <div className="text-xs text-zinc-400 font-mono flex items-center justify-center gap-2">
+          <span>Version {CURRENT_CLIENT_VERSION}</span>
+          <span className="text-zinc-600">•</span>
+          <button
+            type="button"
+            onClick={handleCheckForUpdates}
+            className="text-amber-400 hover:text-amber-300 font-sans hover:underline cursor-pointer"
+          >
+            Check updates
+          </button>
+        </div>
+        <div className="text-xs text-zinc-600">© 2026 Merchant X • Non-Custodial POS</div>
       </div>
 
       {/* Modals */}
+      <AppUpdateNotification
+        forceOpenModal={showUpdateModal}
+        onCloseModal={() => setShowUpdateModal(false)}
+      />
       <VideoTutorialModal isOpen={showTutorial} onClose={() => setShowTutorial(false)} />
       <FeedbackModal isOpen={showFeedback} onClose={() => setShowFeedback(false)} />
       <PrivacyPolicyModal isOpen={showPrivacy} onClose={() => setShowPrivacy(false)} />

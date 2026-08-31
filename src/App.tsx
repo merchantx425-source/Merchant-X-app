@@ -33,6 +33,7 @@ import { WalletModal } from './components/WalletModal';
 import { ChargeFlowModal } from './components/ChargeFlowModal';
 import { ReceiptModal } from './components/ReceiptModal';
 import { PWAInstallPrompt } from './components/PWAInstallPrompt';
+import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { BiometricModal } from './components/BiometricModal';
 import { VideoTutorialModal } from './components/Tutorial/VideoTutorialModal';
 import { Calculator } from './components/Calculator/Calculator';
@@ -810,14 +811,17 @@ export default function App() {
         onClose={() => setShowPwaInstallModal(false)}
       />
 
-      {/* 9. Biometric / PIN Terminal Lock Screen */}
+      {/* 9. PWA / App Version Automatic Update Notification */}
+      <AppUpdateNotification />
+
+      {/* 10. Biometric / PIN Terminal Lock Screen */}
       <BiometricModal
         isOpen={isTerminalLocked}
         isLockScreen={true}
         onSuccess={() => setIsTerminalLocked(false)}
       />
 
-      {/* 10. Startup / Help Video Tutorial Modal */}
+      {/* 11. Startup / Help Video Tutorial Modal */}
       <VideoTutorialModal
         isOpen={showVideoTutorial}
         onClose={() => setShowVideoTutorial(false)}

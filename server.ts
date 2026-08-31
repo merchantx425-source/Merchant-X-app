@@ -183,9 +183,29 @@ app.post('/api/feedback/ratings', (req, res) => {
   }
 });
 
+// App Version & Update Check endpoint for installed PWA & mobile clients
+const CURRENT_APP_VERSION = '1.2.0';
+const APP_RELEASE_TIMESTAMP = Date.now();
+const APP_RELEASE_NOTES = [
+  'Real-time PWA app update notifications for installed mobile terminals',
+  'Automated blockchain payment discrepancy detection (Underpaid / Overpaid)',
+  'Enhanced high-speed parallel mempool & RPC indexing',
+  'Performance and offline caching stability improvements',
+];
+
+app.get('/api/app-version', (_req, res) => {
+  res.json({
+    version: CURRENT_APP_VERSION,
+    buildTime: APP_RELEASE_TIMESTAMP,
+    releaseNotes: APP_RELEASE_NOTES,
+    minSupportedVersion: '1.0.0',
+    serverTime: new Date().toISOString(),
+  });
+});
+
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'Merchant X Server', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'Merchant X Server', version: CURRENT_APP_VERSION, timestamp: new Date().toISOString() });
 });
 
 // Vite Middleware for development & Static file serving for production

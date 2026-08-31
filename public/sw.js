@@ -18,6 +18,13 @@ self.addEventListener('install', (event) => {
   );
 });
 
+// Listen for message from client to skip waiting immediately
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
 // Activate: Clean up older caches & take control immediately
 self.addEventListener('activate', (event) => {
   event.waitUntil(
