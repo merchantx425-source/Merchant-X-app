@@ -35,6 +35,8 @@ import {
   Video,
   MessageSquare,
   HelpCircle,
+  Star,
+  ExternalLink,
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
@@ -413,19 +415,61 @@ export const SettingsView: React.FC = () => {
               className="w-full p-3 bg-[#171a24] hover:bg-[#1f2332] border border-slate-800/60 rounded-xl flex items-center justify-between transition-colors cursor-pointer text-left group"
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
-                  <MessageSquare className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0">
+                  <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">Help Us Improve Merchant X</div>
+                  <div className="text-xs font-bold text-white">Rate Merchant X (5-Star Ratings)</div>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    Send feedback directly to merchantx425@gmail.com
+                    Submit your rating & review • View community merchant ratings
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-emerald-400 transition-colors shrink-0" />
+              <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-amber-400 transition-colors shrink-0" />
             </button>
           </div>
+        </div>
+
+        {/* ================= JOIN US ON X ================= */}
+        <div className="bg-[#12141c] border border-amber-500/30 rounded-2xl p-4 shadow-sm bg-gradient-to-br from-[#161824] via-[#12141f] to-[#1c1810]">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-black border border-zinc-700 flex items-center justify-center text-white">
+                <svg viewBox="0 0 24 24" className="w-4 h-4 fill-white" aria-hidden="true">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <span>Join Us on X</span>
+                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded">
+                    @MerchantX122
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-400">Official community & releases</div>
+              </div>
+            </div>
+
+            <a
+              href="https://x.com/MerchantX122"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3 py-1.5 bg-white hover:bg-zinc-200 text-black font-extrabold text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <span>Follow</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          </div>
+
+          <a
+            href="https://x.com/MerchantX122"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2 px-3 bg-[#181a24] hover:bg-[#202433] border border-zinc-700/60 rounded-xl text-[11px] text-zinc-300 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>Visit https://x.com/MerchantX122</span>
+            <ExternalLink className="w-3 h-3 text-zinc-400" />
+          </a>
         </div>
 
         {/* ================= APP INFO & LEGAL ================= */}

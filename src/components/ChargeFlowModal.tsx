@@ -259,12 +259,15 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
     }
   }, [isOpen, cryptoAsset, merchantWallet, assetConfig.network]);
 
-  // Payment Approved Success Handler (only invoked upon verified blockchain confirmation)
+  // Payment Approved / Verified Handler (supports paid, underpaid, and overpaid)
   const triggerPaymentApproved = useCallback(
     (params: {
       txHash: string;
       customerAddress?: string;
+      status?: 'paid' | 'underpaid' | 'overpaid';
       actualAmount?: number;
+      expectedAmount?: number;
+      discrepancyAmount?: number;
       blockNumber?: number;
       timestamp?: number;
     }) => {
@@ -273,19 +276,33 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
       setIsScanning(false);
 
       const now = new Date();
+      const finalStatus = params.status || 'paid';
+      const actualAmt = params.actualAmount ?? amountCrypto;
+      const expectedAmt = params.expectedAmount ?? amountCrypto;
+
+      let discrepancyNote: string | undefined;
+      if (finalStatus === 'underpaid') {
+        discrepancyNote = `Underpayment: Received ${actualAmt} ${cryptoAsset} (Expected: ${expectedAmt} ${cryptoAsset})`;
+      } else if (finalStatus === 'overpaid') {
+        discrepancyNote = `Overpayment: Received ${actualAmt} ${cryptoAsset} (Expected: ${expectedAmt} ${cryptoAsset})`;
+      }
+
       const txRecord: TransactionRecord = {
         id: `TX-${Date.now().toString(36).toUpperCase()}`,
         reference: `MX-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
         amountFiat,
         fiatCurrency,
-        amountCrypto: params.actualAmount || amountCrypto,
+        amountCrypto: actualAmt,
+        expectedAmountCrypto: expectedAmt,
+        actualAmountCrypto: actualAmt,
+        discrepancyNote,
         cryptoAsset,
         network: assetConfig.network,
         cryptoRate,
         merchantWallet,
         customerWallet: params.customerAddress || 'Verified Customer',
         txHash: params.txHash,
-        status: 'paid',
+        status: finalStatus,
         timestamp: params.timestamp || Date.now(),
         formattedDate: now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         formattedTime: now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
@@ -307,10 +324,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         // Ignore
       }
 
-      // Transition to the generated receipt after 1.5s visual confirmation
+      // Transition to generated receipt after confirmation
       setTimeout(() => {
         onPaymentSuccess(txRecord);
-      }, 1500);
+      }, 1800);
     },
     [amountFiat, fiatCurrency, amountCrypto, cryptoAsset, assetConfig.network, cryptoRate, merchantWallet, onPaymentSuccess]
   );
@@ -336,7 +353,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         triggerPaymentApproved({
           txHash: scanResult.txHash,
           customerAddress: scanResult.customerAddress,
+          status: scanResult.status || 'paid',
           actualAmount: scanResult.actualAmount,
+          expectedAmount: scanResult.expectedAmount,
+          discrepancyAmount: scanResult.discrepancyAmount,
           blockNumber: scanResult.blockNumber,
         });
       } else {
@@ -436,7 +456,10 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
         triggerPaymentApproved({
           txHash: hash,
           customerAddress: result.customerAddress,
+          status: (result.status === 'underpaid' || result.status === 'overpaid' || result.status === 'paid') ? result.status : 'paid',
           actualAmount: result.actualAmount,
+          expectedAmount: result.expectedAmount,
+          discrepancyAmount: result.discrepancyAmount,
           blockNumber: result.blockNumber,
           timestamp: result.timestamp,
         });
@@ -681,28 +704,57 @@ export const ChargeFlowModal: React.FC<ChargeFlowModalProps> = ({
           </div>
         )}
 
-        {/* Approved State */}
+        {/* Approved / Settled State */}
         {step === 'approved' && (
           <div className="py-6 flex flex-col items-center justify-center text-center space-y-4">
-            <div className="w-16 h-16 rounded-full bg-emerald-950/80 border-2 border-emerald-500 flex items-center justify-center text-emerald-400 animate-bounce">
+            <div className={`w-16 h-16 rounded-full flex items-center justify-center animate-bounce ${
+              verifiedTx?.status === 'underpaid'
+                ? 'bg-amber-950/80 border-2 border-amber-500 text-amber-400'
+                : verifiedTx?.status === 'overpaid'
+                ? 'bg-purple-950/80 border-2 border-purple-500 text-purple-400'
+                : 'bg-emerald-950/80 border-2 border-emerald-500 text-emerald-400'
+            }`}>
               <CheckCircle2 className="w-9 h-9" />
             </div>
             <div className="space-y-1">
-              <span className="inline-block px-3 py-1 bg-emerald-950/60 border border-emerald-500/40 text-emerald-400 text-xs font-extrabold tracking-wider uppercase rounded-full">
-                {getTranslation(language, 'paymentApproved')} ✓
+              <span className={`inline-block px-3 py-1 text-xs font-extrabold tracking-wider uppercase rounded-full border ${
+                verifiedTx?.status === 'underpaid'
+                  ? 'bg-amber-950/60 border-amber-500/40 text-amber-400'
+                  : verifiedTx?.status === 'overpaid'
+                  ? 'bg-purple-950/60 border-purple-500/40 text-purple-400'
+                  : 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400'
+              }`}>
+                {verifiedTx?.status === 'underpaid'
+                  ? 'Underpaid Settlement ✓'
+                  : verifiedTx?.status === 'overpaid'
+                  ? 'Overpaid Settlement ✓'
+                  : `${getTranslation(language, 'paymentApproved')} ✓`}
               </span>
               <div className="text-3xl font-extrabold font-display text-white mt-2">
                 {formattedFiat}
               </div>
               <div className="text-xs font-mono font-bold text-amber-400">
-                {formattedCrypto}
+                {verifiedTx ? `${formatCryptoAmount(verifiedTx.amountCrypto, cryptoAsset)} ${cryptoAsset}` : formattedCrypto}
               </div>
+              {verifiedTx?.discrepancyNote && (
+                <div className={`mt-2 p-2 rounded-lg text-[11px] font-mono border ${
+                  verifiedTx.status === 'underpaid'
+                    ? 'bg-amber-950/40 border-amber-800 text-amber-300'
+                    : 'bg-purple-950/40 border-purple-800 text-purple-300'
+                }`}>
+                  {verifiedTx.discrepancyNote}
+                </div>
+              )}
             </div>
 
             <div className="w-full p-3 bg-[#161822] border border-zinc-800 rounded-xl text-left text-xs space-y-1.5">
               <div className="flex items-center justify-between text-zinc-400">
                 <span>{getTranslation(language, 'status')}:</span>
-                <span className="font-semibold text-emerald-400">Settled On-Chain ✓</span>
+                <span className={`font-semibold capitalize ${
+                  verifiedTx?.status === 'underpaid' ? 'text-amber-400' : verifiedTx?.status === 'overpaid' ? 'text-purple-400' : 'text-emerald-400'
+                }`}>
+                  {verifiedTx?.status || 'Settled On-Chain'} ✓
+                </span>
               </div>
               <div className="flex items-center justify-between text-zinc-400">
                 <span>Network:</span>

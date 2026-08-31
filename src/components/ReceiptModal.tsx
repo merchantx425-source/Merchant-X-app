@@ -512,9 +512,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
 
             {/* Paid Stamp & Amount Card */}
             <div className={`relative py-4 px-3 rounded-2xl ${currentTheme.cardBg} ${currentTheme.border} border text-center space-y-2 overflow-hidden shadow-inner`}>
-              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${currentTheme.badgeBg} ${currentTheme.badgeText} text-xs font-black tracking-wider uppercase border`}>
+              <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full ${
+                transaction.status === 'underpaid'
+                  ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                  : transaction.status === 'overpaid'
+                  ? 'bg-purple-500/20 border-purple-400/50 text-purple-300'
+                  : `${currentTheme.badgeBg} ${currentTheme.badgeText}`
+              } text-xs font-black tracking-wider uppercase border`}>
                 <Check className="w-3.5 h-3.5" />
-                <span>PAYMENT COMPLETED & SETTLED</span>
+                <span>
+                  {transaction.status === 'underpaid'
+                    ? 'UNDERPAID SETTLEMENT RECORDED'
+                    : transaction.status === 'overpaid'
+                    ? 'OVERPAID SETTLEMENT RECORDED'
+                    : 'PAYMENT COMPLETED & SETTLED'}
+                </span>
               </div>
 
               <div className={`text-3xl sm:text-4xl font-black font-display tracking-tight ${isPaper ? 'text-zinc-950' : 'text-white'}`}>
@@ -524,6 +536,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({
               <div className={`inline-block px-3.5 py-1 rounded-full ${isPaper ? 'bg-zinc-200 border-zinc-400 text-zinc-900' : 'bg-black/60 border-zinc-700/60 text-amber-300'} text-xs font-mono font-bold border`}>
                 {formattedCrypto}
               </div>
+
+              {transaction.discrepancyNote && (
+                <div className="text-[11px] font-mono text-amber-400 max-w-xs mx-auto">
+                  {transaction.discrepancyNote}
+                </div>
+              )}
 
               <div className={`text-[11px] font-medium ${currentTheme.textSecondary}`}>
                 Settled on {transaction.network} Blockchain

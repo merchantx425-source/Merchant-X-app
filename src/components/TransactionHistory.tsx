@@ -64,7 +64,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
     return transactions.filter((tx) => {
       // 1. Status or Asset filter
       if (selectedFilter !== 'ALL') {
-        if (['paid', 'pending', 'failed'].includes(selectedFilter)) {
+        if (['paid', 'underpaid', 'overpaid', 'pending', 'failed'].includes(selectedFilter)) {
           if (tx.status !== selectedFilter) return false;
         } else {
           if (tx.cryptoAsset !== selectedFilter) return false;
@@ -80,7 +80,8 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
         const matchWallet = tx.merchantWallet.toLowerCase().includes(q);
         const matchAsset = tx.cryptoAsset.toLowerCase().includes(q);
         const matchAmount = tx.amountFiat.toString().includes(q);
-        return matchRef || matchId || matchHash || matchWallet || matchAsset || matchAmount;
+        const matchStatus = tx.status.toLowerCase().includes(q);
+        return matchRef || matchId || matchHash || matchWallet || matchAsset || matchAmount || matchStatus;
       }
 
       return true;
@@ -89,7 +90,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
 
   // Analytics Computation
   const analytics = useMemo(() => {
-    const paidTxs = transactions.filter((t) => t.status === 'paid');
+    const paidTxs = transactions.filter((t) => t.status === 'paid' || t.status === 'overpaid' || t.status === 'underpaid');
     const totalVolumeFiat = paidTxs.reduce((sum, t) => sum + (t.amountFiat || 0), 0);
     const avgTicket = paidTxs.length > 0 ? totalVolumeFiat / paidTxs.length : 0;
     const fiatCurrency = settings?.fiatCurrency || 'NGN';
@@ -208,6 +209,8 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
   const filterTabs: { label: string; value: FilterOption }[] = [
     { label: getTranslation(language, 'all'), value: 'ALL' },
     { label: getTranslation(language, 'paid'), value: 'paid' },
+    { label: 'Underpaid', value: 'underpaid' },
+    { label: 'Overpaid', value: 'overpaid' },
     { label: getTranslation(language, 'pending'), value: 'pending' },
     { label: 'USDC', value: 'USDC' },
     { label: 'VERSE', value: 'VERSE' },
@@ -498,6 +501,10 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                       <div className="w-10 h-10 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center shrink-0">
                         {tx.status === 'paid' ? (
                           <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                        ) : tx.status === 'overpaid' ? (
+                          <CheckCircle2 className="w-5 h-5 text-purple-400" />
+                        ) : tx.status === 'underpaid' ? (
+                          <AlertCircle className="w-5 h-5 text-amber-400" />
                         ) : tx.status === 'pending' ? (
                           <Clock className="w-5 h-5 text-amber-400 animate-pulse" />
                         ) : (
@@ -505,7 +512,7 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-semibold text-sm text-white truncate group-hover:text-amber-400 transition-colors">
                             {tx.reference}
                           </span>
@@ -513,6 +520,10 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                             className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
                               tx.status === 'paid'
                                 ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/50'
+                                : tx.status === 'overpaid'
+                                ? 'bg-purple-950/60 text-purple-300 border border-purple-800/50'
+                                : tx.status === 'underpaid'
+                                ? 'bg-amber-950/60 text-amber-300 border border-amber-800/50'
                                 : tx.status === 'pending'
                                 ? 'bg-amber-950/60 text-amber-400 border border-amber-800/50'
                                 : 'bg-red-950/60 text-red-400 border border-red-800/50'
@@ -526,6 +537,11 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                           <span>•</span>
                           <span className="text-zinc-400">{tx.network}</span>
                         </div>
+                        {tx.discrepancyNote && (
+                          <div className="text-[10px] text-amber-400/90 font-mono mt-0.5 truncate">
+                            {tx.discrepancyNote}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -580,8 +596,25 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
             <div className="py-4 space-y-3 text-xs">
               <div className="flex items-center justify-between p-3 bg-zinc-900/80 rounded-xl">
                 <span className="text-zinc-400">{getTranslation(language, 'status')}</span>
-                <span className="font-bold uppercase text-emerald-400">{inspectedTx.status} ✓</span>
+                <span className={`font-bold uppercase ${
+                  inspectedTx.status === 'paid'
+                    ? 'text-emerald-400'
+                    : inspectedTx.status === 'overpaid'
+                    ? 'text-purple-400'
+                    : inspectedTx.status === 'underpaid'
+                    ? 'text-amber-400'
+                    : inspectedTx.status === 'pending'
+                    ? 'text-amber-400'
+                    : 'text-red-400'
+                }`}>
+                  {inspectedTx.status} ✓
+                </span>
               </div>
+              {inspectedTx.discrepancyNote && (
+                <div className="p-2.5 bg-amber-950/40 border border-amber-800/60 rounded-xl text-amber-300 font-mono text-[11px]">
+                  {inspectedTx.discrepancyNote}
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400">Transaction ID:</span>
                 <span className="font-mono text-white">{inspectedTx.id}</span>
@@ -603,6 +636,14 @@ export const TransactionHistory: React.FC<TransactionHistoryProps> = ({
                   {inspectedTx.amountCrypto} {inspectedTx.cryptoAsset}
                 </span>
               </div>
+              {inspectedTx.expectedAmountCrypto && inspectedTx.expectedAmountCrypto !== inspectedTx.amountCrypto && (
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-400">Expected Crypto:</span>
+                  <span className="font-mono text-zinc-400">
+                    {inspectedTx.expectedAmountCrypto} {inspectedTx.cryptoAsset}
+                  </span>
+                </div>
+              )}
               <div className="flex items-center justify-between">
                 <span className="text-zinc-400">Network:</span>
                 <span className="text-white">{inspectedTx.network}</span>

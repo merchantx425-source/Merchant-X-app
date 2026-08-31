@@ -1,4 +1,5 @@
 import React from 'react';
+import { VerseLogo } from '../VerseLogo';
 
 export interface ChainInfo {
   id: string;
@@ -34,19 +35,7 @@ export const ChainLogo: React.FC<{ chainId: string; size?: 'xs' | 'sm' | 'md' | 
 
   switch (chainId.toLowerCase()) {
     case 'verse':
-      return (
-        <svg viewBox="0 0 100 100" className={`${dim} ${className} shrink-0`} fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="50" cy="50" r="48" fill="#0A0B14" stroke="#00D1FF" strokeWidth="3" />
-          <path d="M28 32L50 72L72 32H58L50 48L42 32H28Z" fill="url(#verseGradDemo)" />
-          <defs>
-            <linearGradient id="verseGradDemo" x1="28" y1="32" x2="72" y2="72" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#00D1FF" />
-              <stop offset="0.5" stopColor="#0088FF" />
-              <stop offset="1" stopColor="#7B2CBF" />
-            </linearGradient>
-          </defs>
-        </svg>
-      );
+      return <VerseLogo size={size} className={`${className} shrink-0`} />;
 
     case 'polygon':
     case 'pol':

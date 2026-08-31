@@ -329,11 +329,11 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/90 backdrop-blur-xl animate-in fade-in duration-200 overflow-hidden">
       <div
         ref={containerRef}
         className={`relative w-full max-w-5xl bg-[#0b0d14] border border-zinc-800 rounded-2xl sm:rounded-3xl overflow-hidden shadow-2xl flex flex-col ${
-          isFullscreen ? 'h-full max-w-none rounded-none' : 'h-[96vh] sm:h-auto sm:max-h-[96vh]'
+          isFullscreen ? 'h-full max-w-none rounded-none' : 'max-h-[96dvh] h-full sm:h-auto'
         }`}
       >
         {/* TOP BAR - CLEAN & PROMINENT MERCHANT X */}
@@ -458,15 +458,15 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
                       <p className="text-xs text-zinc-400">Decentralized Web3 Point-of-Sale Terminal</p>
                     </div>
 
-                    {/* Chain Badges in Scene 1 */}
+                    {/* Supported Crypto Asset Badges in Scene 1: VERSE, POL, USDT, USDC, ETH, BTC */}
                     <div className="flex flex-wrap items-center justify-center gap-1.5 max-w-md mx-auto pt-1">
-                      {ALL_CHAINS.slice(0, 7).map((c) => (
+                      {ALL_CHAINS.map((c) => (
                         <div
                           key={c.id}
                           className="flex items-center gap-1 px-2 py-0.5 bg-zinc-900/80 border border-zinc-800 rounded-md text-[10px] text-zinc-300"
                         >
                           <ChainLogo chainId={c.id} size="xs" />
-                          <span>{c.name}</span>
+                          <span className="font-semibold">{c.symbol}</span>
                         </div>
                       ))}
                     </div>
@@ -558,14 +558,15 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
                       </div>
                     </div>
 
-                    {/* Other assets list */}
-                    <div className="grid grid-cols-4 gap-1.5 pt-1 text-center">
-                      {['POL', 'USDT', 'USDC', 'BTC'].map((token) => (
+                    {/* Other supported crypto assets */}
+                    <div className="grid grid-cols-5 gap-1.5 pt-1 text-center">
+                      {['pol', 'usdt', 'usdc', 'eth', 'btc'].map((token) => (
                         <div
                           key={token}
-                          className="p-1.5 rounded-lg bg-zinc-900/60 border border-zinc-800 text-[10px] text-zinc-400"
+                          className="p-1.5 rounded-lg bg-zinc-900/80 border border-zinc-800 text-[10px] text-zinc-300 flex items-center justify-center gap-1 font-mono"
                         >
-                          {token}
+                          <ChainLogo chainId={token} size="xs" />
+                          <span className="font-semibold uppercase">{token}</span>
                         </div>
                       ))}
                     </div>

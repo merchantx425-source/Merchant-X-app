@@ -956,32 +956,38 @@ export async function fetchRealAssetBalance(
   }
 }
 
+export interface VerificationResult {
+  isVerified: boolean;
+  status: 'paid' | 'underpaid' | 'overpaid' | 'failed';
+  blockNumber?: number;
+  timestamp?: number;
+  customerAddress?: string;
+  expectedAmount?: number;
+  actualAmount?: number;
+  discrepancyAmount?: number;
+  errorMessage?: string;
+}
+
 /**
- * Verify a real on-chain transaction with strict fake payment prevention
+ * Verify a real on-chain transaction with strict fake payment prevention and BigInt financial precision
+ * Correctly distinguishes between PAID, UNDERPAID, and OVERPAID without floating-point math.
  */
 export async function verifyBlockchainTransaction(params: {
   txHash: string;
   expectedAsset: CryptoAsset;
   expectedAmountCrypto: number;
   merchantWallet: string;
-}): Promise<{
-  isVerified: boolean;
-  blockNumber?: number;
-  timestamp?: number;
-  customerAddress?: string;
-  actualAmount?: number;
-  errorMessage?: string;
-}> {
+}): Promise<VerificationResult> {
   const { txHash, expectedAsset, expectedAmountCrypto, merchantWallet } = params;
   const config = SUPPORTED_ASSETS[expectedAsset];
   const cleanTxHash = txHash.trim();
 
   if (!cleanTxHash) {
-    return { isVerified: false, errorMessage: 'Please provide a valid transaction hash.' };
+    return { isVerified: false, status: 'failed', errorMessage: 'Please provide a valid transaction hash.' };
   }
 
   try {
-    // 1. Bitcoin verification
+    // 1. Bitcoin verification using Satoshis (BigInt)
     if (config.networkFamily === 'bitcoin') {
       let txData: any = null;
 
@@ -1010,6 +1016,7 @@ export async function verifyBlockchainTransaction(params: {
       if (!txData) {
         return {
           isVerified: false,
+          status: 'failed',
           errorMessage: 'Transaction hash not found in Bitcoin mempool or blockchain.',
         };
       }
@@ -1022,29 +1029,57 @@ export async function verifyBlockchainTransaction(params: {
       if (!matchedOutput) {
         return {
           isVerified: false,
+          status: 'failed',
           errorMessage: 'Fraud check failed: Recipient address does not match your merchant Bitcoin wallet.',
         };
       }
 
-      const receivedBtc = (matchedOutput.value || 0) / 1e8;
+      const actualSats = BigInt(matchedOutput.value || 0);
+      const expectedSats = BigInt(Math.round(expectedAmountCrypto * 1e8));
+      const toleranceSats = (expectedSats * 5n) / 1000n; // 0.5% tolerance
 
-      // Strict Fake Payment & Underpayment Check (allow max 1.5% satoshi rounding difference)
-      const minRequired = expectedAmountCrypto * 0.985;
-      if (receivedBtc < minRequired) {
+      const actualBtc = Number(actualSats) / 1e8;
+      const senderAddr = txData.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+      const blockNumber = txData.status?.block_height;
+      const timestamp = txData.status?.block_time ? txData.status.block_time * 1000 : Date.now();
+
+      if (actualSats < expectedSats - toleranceSats) {
+        const shortfall = Number(expectedSats - actualSats) / 1e8;
         return {
-          isVerified: false,
-          errorMessage: `Underpayment detected: Received ${receivedBtc.toFixed(8)} BTC, but invoice required ${expectedAmountCrypto.toFixed(8)} BTC.`,
+          isVerified: true,
+          status: 'underpaid',
+          blockNumber,
+          timestamp,
+          customerAddress: senderAddr,
+          expectedAmount: expectedAmountCrypto,
+          actualAmount: actualBtc,
+          discrepancyAmount: shortfall,
+          errorMessage: `Underpayment: Received ${actualBtc.toFixed(8)} BTC, expected ${expectedAmountCrypto.toFixed(8)} BTC (Shortfall: ${shortfall.toFixed(8)} BTC)`,
         };
       }
 
-      const senderAddr = txData.vin?.[0]?.prevout?.scriptpubkey_address || 'Bitcoin Wallet';
+      if (actualSats > expectedSats + toleranceSats) {
+        const excess = Number(actualSats - expectedSats) / 1e8;
+        return {
+          isVerified: true,
+          status: 'overpaid',
+          blockNumber,
+          timestamp,
+          customerAddress: senderAddr,
+          expectedAmount: expectedAmountCrypto,
+          actualAmount: actualBtc,
+          discrepancyAmount: excess,
+        };
+      }
 
       return {
         isVerified: true,
-        blockNumber: txData.status?.block_height,
-        timestamp: txData.status?.block_time ? txData.status.block_time * 1000 : Date.now(),
+        status: 'paid',
+        blockNumber,
+        timestamp,
         customerAddress: senderAddr,
-        actualAmount: receivedBtc,
+        expectedAmount: expectedAmountCrypto,
+        actualAmount: actualBtc,
       };
     }
 
@@ -1057,6 +1092,7 @@ export async function verifyBlockchainTransaction(params: {
     if (!receipt) {
       return {
         isVerified: false,
+        status: 'failed',
         errorMessage: 'Transaction is pending or not yet mined on the network.',
       };
     }
@@ -1064,11 +1100,12 @@ export async function verifyBlockchainTransaction(params: {
     if (receipt.status !== 1) {
       return {
         isVerified: false,
+        status: 'failed',
         errorMessage: 'Transaction failed or was reverted on-chain.',
       };
     }
 
-    // For ERC20 tokens (VERSE, USDT), verify Transfer log to merchant address
+    // For ERC20 tokens (VERSE, USDT, USDC), verify Transfer log to merchant address
     if (config.contractAddress) {
       const transferTopic = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
       const paddedMerchant = ethers.zeroPadValue(merchantWallet.toLowerCase(), 32).toLowerCase();
@@ -1083,28 +1120,55 @@ export async function verifyBlockchainTransaction(params: {
       if (!matchedLog) {
         return {
           isVerified: false,
+          status: 'failed',
           errorMessage: `Fraud check failed: No verified ${expectedAsset} token transfer found to your merchant wallet.`,
         };
       }
 
-      const rawVal = ethers.toBigInt(matchedLog.data);
-      const actualAmount = parseFloat(ethers.formatUnits(rawVal, config.decimals));
-      const minRequired = expectedAmountCrypto * 0.985;
+      const actualBigInt = ethers.toBigInt(matchedLog.data);
+      const expectedDecStr = expectedAmountCrypto.toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: config.decimals });
+      const expectedBigInt = ethers.parseUnits(expectedDecStr, config.decimals);
+      const tolerance = (expectedBigInt * 5n) / 1000n; // 0.5% tolerance
 
-      if (actualAmount < minRequired) {
+      const actualAmount = parseFloat(ethers.formatUnits(actualBigInt, config.decimals));
+      const sender = matchedLog.topics?.[1] ? ethers.stripZerosLeft(matchedLog.topics[1]) : receipt.from;
+
+      if (actualBigInt < expectedBigInt - tolerance) {
+        const shortfall = expectedAmountCrypto - actualAmount;
         return {
-          isVerified: false,
-          errorMessage: `Underpayment detected: Received ${actualAmount} ${expectedAsset}, but invoice required ${expectedAmountCrypto} ${expectedAsset}.`,
+          isVerified: true,
+          status: 'underpaid',
+          blockNumber: receipt.blockNumber,
+          timestamp: Date.now(),
+          customerAddress: sender,
+          expectedAmount: expectedAmountCrypto,
+          actualAmount,
+          discrepancyAmount: shortfall,
+          errorMessage: `Underpayment: Received ${actualAmount} ${expectedAsset}, expected ${expectedAmountCrypto} ${expectedAsset}`,
         };
       }
 
-      const sender = matchedLog.topics?.[1] ? ethers.stripZerosLeft(matchedLog.topics[1]) : receipt.from;
+      if (actualBigInt > expectedBigInt + tolerance) {
+        const excess = actualAmount - expectedAmountCrypto;
+        return {
+          isVerified: true,
+          status: 'overpaid',
+          blockNumber: receipt.blockNumber,
+          timestamp: Date.now(),
+          customerAddress: sender,
+          expectedAmount: expectedAmountCrypto,
+          actualAmount,
+          discrepancyAmount: excess,
+        };
+      }
 
       return {
         isVerified: true,
+        status: 'paid',
         blockNumber: receipt.blockNumber,
         timestamp: Date.now(),
         customerAddress: sender,
+        expectedAmount: expectedAmountCrypto,
         actualAmount,
       };
     }
@@ -1116,36 +1180,66 @@ export async function verifyBlockchainTransaction(params: {
 
     const tx = await provider.getTransaction(cleanTxHash);
     if (!tx) {
-      return { isVerified: false, errorMessage: 'Transaction details could not be retrieved.' };
+      return { isVerified: false, status: 'failed', errorMessage: 'Transaction details could not be retrieved.' };
     }
 
     if (tx.to?.toLowerCase() !== merchantWallet.toLowerCase()) {
       return {
         isVerified: false,
+        status: 'failed',
         errorMessage: 'Fraud check failed: Transaction recipient does not match your merchant wallet.',
       };
     }
 
-    const actualAmount = parseFloat(ethers.formatEther(tx.value));
-    const minRequired = expectedAmountCrypto * 0.985;
+    const actualWei = tx.value;
+    const expectedDecStr = expectedAmountCrypto.toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: 18 });
+    const expectedWei = ethers.parseEther(expectedDecStr);
+    const tolerance = (expectedWei * 5n) / 1000n; // 0.5% tolerance
 
-    if (actualAmount < minRequired) {
+    const actualAmount = parseFloat(ethers.formatEther(actualWei));
+
+    if (actualWei < expectedWei - tolerance) {
+      const shortfall = expectedAmountCrypto - actualAmount;
       return {
-        isVerified: false,
-        errorMessage: `Underpayment detected: Received ${actualAmount} ${expectedAsset}, but invoice required ${expectedAmountCrypto} ${expectedAsset}.`,
+        isVerified: true,
+        status: 'underpaid',
+        blockNumber: receipt.blockNumber,
+        timestamp: Date.now(),
+        customerAddress: receipt.from,
+        expectedAmount: expectedAmountCrypto,
+        actualAmount,
+        discrepancyAmount: shortfall,
+        errorMessage: `Underpayment: Received ${actualAmount} ${expectedAsset}, expected ${expectedAmountCrypto} ${expectedAsset}`,
+      };
+    }
+
+    if (actualWei > expectedWei + tolerance) {
+      const excess = actualAmount - expectedAmountCrypto;
+      return {
+        isVerified: true,
+        status: 'overpaid',
+        blockNumber: receipt.blockNumber,
+        timestamp: Date.now(),
+        customerAddress: receipt.from,
+        expectedAmount: expectedAmountCrypto,
+        actualAmount,
+        discrepancyAmount: excess,
       };
     }
 
     return {
       isVerified: true,
+      status: 'paid',
       blockNumber: receipt.blockNumber,
       timestamp: Date.now(),
       customerAddress: receipt.from,
+      expectedAmount: expectedAmountCrypto,
       actualAmount,
     };
   } catch (err: any) {
     return {
       isVerified: false,
+      status: 'failed',
       errorMessage: err?.message || 'Blockchain verification failed.',
     };
   }
@@ -1163,9 +1257,12 @@ export async function scanForIncomingPayment(params: {
   initialBalanceRaw?: number;
 }): Promise<{
   isDetected: boolean;
+  status?: 'paid' | 'underpaid' | 'overpaid';
   txHash?: string;
   customerAddress?: string;
+  expectedAmount?: number;
   actualAmount?: number;
+  discrepancyAmount?: number;
   isConfirmed?: boolean;
   blockNumber?: number;
 }> {
