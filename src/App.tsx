@@ -746,6 +746,7 @@ export default function App() {
             onOpenHistory={() => setActiveTab('transactions')}
             onExportTransactions={handleExportTransactions}
             onOpenSubscription={() => setActiveTab('subscription')}
+            onOpenPOS={() => setActiveTab('pos')}
             subscriptionState={subscriptionState}
             isPro={isPro}
             onOpenInstallPrompt={() => setShowPwaInstallModal(true)}

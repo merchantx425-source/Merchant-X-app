@@ -68,6 +68,7 @@ interface SettingsProps {
   onOpenHistory: () => void;
   onExportTransactions: () => void;
   onOpenSubscription?: () => void;
+  onOpenPOS?: () => void;
   subscriptionState?: SubscriptionState;
   isPro?: boolean;
   onOpenInstallPrompt?: () => void;
@@ -96,6 +97,7 @@ export const Settings: React.FC<SettingsProps> = ({
   onOpenHistory,
   onExportTransactions,
   onOpenSubscription,
+  onOpenPOS,
   subscriptionState,
   isPro = false,
   onOpenInstallPrompt,
@@ -1075,6 +1077,11 @@ export const Settings: React.FC<SettingsProps> = ({
         onClose={() => {
           setShowAIAssistant(false);
           setAiInitialPrompt(null);
+        }}
+        onNavigateToHome={() => {
+          setShowAIAssistant(false);
+          setAiInitialPrompt(null);
+          onOpenPOS?.();
         }}
         transactions={transactions}
         settings={settings}
