@@ -4,6 +4,7 @@ import {
   AppSettings,
   WalletState,
   SubscriptionState,
+  AssetBalance,
 } from '../../types/merchant';
 import {
   BusinessMetrics,
@@ -11,7 +12,6 @@ import {
   queryAIBusinessAssistant,
   ChatMessage,
 } from '../../services/aiAssistantService';
-import { MerchantXLogo } from '../MerchantXLogo';
 import Markdown from 'react-markdown';
 import {
   Sparkles,
@@ -29,9 +29,9 @@ import {
   Check,
   ShieldCheck,
   Zap,
-  ChevronRight,
   BarChart3,
   Loader2,
+  Square,
 } from 'lucide-react';
 
 interface AIBusinessAssistantModalProps {
@@ -41,6 +41,7 @@ interface AIBusinessAssistantModalProps {
   settings: AppSettings;
   walletState: WalletState;
   subscriptionState?: SubscriptionState;
+  balances?: Record<string, AssetBalance>;
   cryptoRatesUsd?: Record<string, number>;
   cryptoInFiatRates?: Record<string, number>;
   initialPrompt?: string | null;
@@ -54,7 +55,7 @@ const SUGGESTED_QUESTIONS = [
   { label: "Sales comparison", icon: BarChart3, prompt: "Compare my sales this month with last month. Are my sales increasing or decreasing?" },
   { label: "Token breakdown", icon: Coins, prompt: "Which payment token is used the most? How much VERSE, USDT, and BTC did I receive?" },
   { label: "Payment discrepancies", icon: AlertCircle, prompt: "How many payments were underpaid and overpaid?" },
-  { label: "Business performance", icon: Sparkles, prompt: "Give me a complete summary of my business performance and tell me what I should pay attention to based on my sales data." },
+  { label: "Business performance", icon: Sparkles, prompt: "Give me a complete summary of my business performance based on my real sales data." },
 ];
 
 export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> = ({
@@ -64,6 +65,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
   settings,
   walletState,
   subscriptionState,
+  balances = {},
   cryptoRatesUsd = {},
   cryptoInFiatRates = {},
   initialPrompt,
@@ -76,7 +78,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
     {
       id: 'welcome',
       role: 'assistant',
-      content: `### 👋 Welcome to your AI Business Assistant\n\nI have connected directly to your **Merchant X live transaction ledger** (${transactions.length} total records).\n\nYou can ask me any question about your **sales volume, payment tokens (VERSE, USDT, BTC, ETH), customer transactions, month-over-month comparisons**, or **payment discrepancies**.\n\n*Tap any suggested question below or type your inquiry.*`,
+      content: `### 👋 Welcome to your AI Business Assistant\n\nI have connected directly to your **Merchant X real transaction ledger** (${transactions.length} total records).\n\nYou can ask me any question about your **real sales volume, received crypto tokens (VERSE, USDT, BTC, ETH, POL), settlement transactions, month-over-month comparisons**, or **payment audits**.\n\n*Tap any suggested question below or type your inquiry.*`,
       timestamp: Date.now(),
     },
   ]);
@@ -86,6 +88,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Recalculate metrics when transactions or settings change
   useEffect(() => {
@@ -113,11 +116,60 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
     }
   }, [isOpen]);
 
+  // Keyboard shortcut: ESC to cancel current generation or close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        if (isLoading) {
+          handleCancelQuery();
+        } else {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isLoading]);
+
   if (!isOpen) return null;
+
+  const handleCancelQuery = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    // Add a cancelled notice if wanted
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: 'cancelled-' + Date.now(),
+        role: 'assistant',
+        content: `*Generation cancelled by user.*`,
+        timestamp: Date.now(),
+      },
+    ]);
+  };
+
+  const handleCloseAndCancel = () => {
+    if (isLoading && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    onClose();
+  };
 
   const handleSendMessage = async (textToSend?: string) => {
     const queryText = (textToSend || inputPrompt).trim();
     if (!queryText || isLoading) return;
+
+    // Abort previous in-flight request if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
 
     const userMsgId = 'user-' + Date.now();
     const newUserMsg: ChatMessage = {
@@ -131,7 +183,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
     setInputPrompt('');
     setIsLoading(true);
 
-    // Prepare real context
+    // Prepare complete, 100% real context
     const contextPayload = {
       merchantName: settings.merchantName || 'Merchant Terminal',
       merchantLocation: settings.merchantLocation || 'Global',
@@ -141,6 +193,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
       metrics,
       walletState,
       subscriptionState,
+      balances,
       liveRates: cryptoInFiatRates,
       liveRatesUsd: cryptoRatesUsd,
       clientTime: new Date().toISOString(),
@@ -148,7 +201,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
     };
 
     try {
-      const res = await queryAIBusinessAssistant(queryText, contextPayload);
+      const res = await queryAIBusinessAssistant(queryText, contextPayload, abortController.signal);
       const assistantMsg: ChatMessage = {
         id: 'assistant-' + Date.now(),
         role: 'assistant',
@@ -157,6 +210,10 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // User cancelled deliberately, handled
+        return;
+      }
       const errorMsg: ChatMessage = {
         id: 'err-' + Date.now(),
         role: 'assistant',
@@ -167,6 +224,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -177,11 +235,16 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
   };
 
   const handleClearHistory = () => {
+    if (isLoading && abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+      setIsLoading(false);
+    }
     setMessages([
       {
         id: 'welcome-reset',
         role: 'assistant',
-        content: `### 🔄 Conversation Reset\n\nI am ready for your next question regarding your **${metrics.totalTransactionsCount} live transactions** (${getFiatSymbol(settings.fiatCurrency)}${metrics.totalRevenueFiat.toLocaleString()} gross volume).`,
+        content: `### 🔄 Conversation Reset\n\nI am ready for your next inquiry regarding your **${metrics.totalTransactionsCount} verified transactions** (${getFiatSymbol(settings.fiatCurrency)}${metrics.totalRevenueFiat.toLocaleString()} gross volume).`,
         timestamp: Date.now(),
       },
     ]);
@@ -190,13 +253,20 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
   const fiatSym = getFiatSymbol(settings.fiatCurrency);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/85 backdrop-blur-md animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          handleCloseAndCancel();
+        }
+      }}
+    >
       <div className="w-full max-w-3xl h-[92vh] sm:h-[85vh] bg-[#0c0e15] border border-zinc-800/90 rounded-3xl shadow-2xl flex flex-col overflow-hidden relative">
         {/* Background glow accents */}
         <div className="absolute -top-20 -right-20 w-64 h-64 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="absolute -bottom-20 -left-20 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        {/* 1. Header */}
+        {/* 1. Header with explicit Cancel and X close buttons */}
         <div className="p-4 sm:p-5 border-b border-zinc-800/80 bg-[#10121a]/90 backdrop-blur-md flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-300 text-black flex items-center justify-center font-bold shrink-0 shadow-lg shadow-amber-500/20">
@@ -218,7 +288,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={handleClearHistory}
@@ -227,18 +297,25 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
             >
               <RotateCcw className="w-4 h-4" />
             </button>
+
+            {/* Cancel & Close Button Header Controls */}
             <button
               type="button"
-              onClick={onClose}
-              className="p-2 text-zinc-400 hover:text-white bg-zinc-800/50 hover:bg-zinc-800 rounded-xl transition-colors cursor-pointer"
-              title="Close"
+              onClick={handleCloseAndCancel}
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                isLoading
+                  ? 'bg-red-600/30 hover:bg-red-600 border border-red-500 text-red-200 hover:text-white animate-pulse shadow-md'
+                  : 'text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/80'
+              }`}
+              title={isLoading ? 'Cancel Query & Close' : 'Cancel / Close Assistant'}
             >
-              <X className="w-4 h-4" />
+              <span>{isLoading ? 'Cancel Query' : 'Cancel'}</span>
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
 
-        {/* 2. Real-Time Snapshot Bar (Live metrics) */}
+        {/* 2. Real-Time Snapshot Bar (Live real metrics) */}
         <div className="px-4 py-2 bg-[#141724]/70 border-b border-zinc-800/60 flex items-center gap-3 overflow-x-auto no-scrollbar text-xs shrink-0">
           <div className="flex items-center gap-1.5 whitespace-nowrap text-zinc-300 bg-[#0d0e14] px-2.5 py-1 rounded-lg border border-zinc-800">
             <span className="text-zinc-500">Gross Sales:</span>
@@ -363,16 +440,44 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
             );
           })}
 
-          {/* Loading Typing Indicator */}
+          {/* Loading Indicator with Prominent Cancel/Stop Button */}
           {isLoading && (
-            <div className="flex gap-3 justify-start animate-in fade-in duration-150">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
-                <Bot className="w-4 h-4 animate-spin-slow" />
+            <div className="flex flex-col gap-2 animate-in fade-in duration-150">
+              <div className="flex gap-3 justify-start items-start">
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 mt-0.5">
+                  <Bot className="w-4 h-4 animate-spin-slow" />
+                </div>
+                <div className="bg-[#151822] border border-zinc-800/90 rounded-2xl p-3.5 shadow-lg flex items-center justify-between gap-3 text-xs text-zinc-300 flex-1 max-w-[85%]">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>Analyzing real ledger records with Gemini 3.7 Flash...</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCancelQuery}
+                    className="px-3 py-1 bg-red-950/80 hover:bg-red-800 border border-red-700/80 text-red-200 hover:text-white text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer shrink-0 shadow-md"
+                    title="Stop AI Generation"
+                  >
+                    <Square className="w-3 h-3 fill-current" />
+                    <span>Cancel</span>
+                  </button>
+                </div>
               </div>
-              <div className="bg-[#151822] border border-zinc-800/90 rounded-2xl p-3.5 shadow-lg flex items-center gap-2.5 text-xs text-zinc-400">
-                <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
-                <span>Analyzing real ledger records with Gemini 3.7 Flash...</span>
-              </div>
+            </div>
+          )}
+
+          {/* Sticky Floating Cancel Button that Stays Fixed in View while Answering */}
+          {isLoading && (
+            <div className="sticky bottom-2 z-40 flex justify-center pointer-events-auto py-1 animate-in fade-in slide-in-from-bottom-2 duration-150">
+              <button
+                type="button"
+                onClick={handleCancelQuery}
+                className="px-4 py-2 bg-red-600 hover:bg-red-500 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-full shadow-2xl border-2 border-red-400 flex items-center gap-2 transition-all cursor-pointer shadow-red-900/50"
+                title="Cancel ongoing AI answer"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Cancel Answering (Stop)</span>
+              </button>
             </div>
           )}
 
@@ -405,7 +510,7 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
           </div>
         </div>
 
-        {/* 5. Input Bar */}
+        {/* 5. Input Bar with Inline Cancel */}
         <div className="p-3 sm:p-4 bg-[#10121a] border-t border-zinc-800/90 shrink-0">
           <form
             onSubmit={(e) => {
@@ -414,35 +519,63 @@ export const AIBusinessAssistantModal: React.FC<AIBusinessAssistantModalProps> =
             }}
             className="flex items-center gap-2"
           >
-            <input
-              ref={inputRef}
-              type="text"
-              value={inputPrompt}
-              onChange={(e) => setInputPrompt(e.target.value)}
-              placeholder="Ask about sales, tokens, best day, revenue..."
-              disabled={isLoading}
-              className="flex-1 bg-[#090b10] border border-zinc-700/80 rounded-2xl px-4 py-3 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/40 transition-all"
-            />
-
-            <button
-              type="submit"
-              disabled={!inputPrompt.trim() || isLoading}
-              className="px-4 sm:px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-40 disabled:pointer-events-none text-black font-extrabold text-xs sm:text-sm rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
-            >
-              {isLoading ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <>
-                  <Send className="w-4 h-4" />
-                  <span className="hidden sm:inline">Ask</span>
-                </>
+            <div className="relative flex-1">
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputPrompt}
+                onChange={(e) => setInputPrompt(e.target.value)}
+                placeholder="Ask about sales, tokens, best day, revenue..."
+                disabled={isLoading}
+                className="w-full bg-[#090b10] border border-zinc-700/80 rounded-2xl pl-4 pr-9 py-3 text-xs sm:text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/40 transition-all"
+              />
+              {inputPrompt.length > 0 && !isLoading && (
+                <button
+                  type="button"
+                  onClick={() => setInputPrompt('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-zinc-400 hover:text-white rounded-md cursor-pointer"
+                  title="Clear input"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
               )}
-            </button>
+            </div>
+
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={handleCancelQuery}
+                className="px-4 py-3 bg-red-900/80 hover:bg-red-800 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-2xl transition-all shadow-md flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                title="Cancel ongoing AI query"
+              >
+                <X className="w-4 h-4" />
+                <span>Cancel</span>
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={!inputPrompt.trim()}
+                className="px-4 sm:px-5 py-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 disabled:opacity-40 disabled:pointer-events-none text-black font-extrabold text-xs sm:text-sm rounded-2xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Send className="w-4 h-4" />
+                <span className="hidden sm:inline">Ask</span>
+              </button>
+            )}
           </form>
 
           <div className="flex items-center justify-between text-[11px] text-zinc-500 mt-2 px-1">
             <span>Powered by Merchant X Real-Ledger Analytics & Gemini 3.7 Flash</span>
-            <span>Read-Only • Safe</span>
+            <div className="flex items-center gap-2">
+              <span>Read-Only • Safe</span>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={handleCloseAndCancel}
+                className="text-zinc-400 hover:text-zinc-200 underline cursor-pointer"
+              >
+                Close (Esc)
+              </button>
+            </div>
           </div>
         </div>
       </div>

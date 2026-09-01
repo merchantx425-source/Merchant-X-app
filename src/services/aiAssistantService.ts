@@ -1,4 +1,4 @@
-import { TransactionRecord, AppSettings, CryptoAsset, WalletState, SubscriptionState } from '../types/merchant';
+import { TransactionRecord, AppSettings, CryptoAsset, WalletState, SubscriptionState, AssetBalance } from '../types/merchant';
 
 export interface TokenSummary {
   count: number;
@@ -58,10 +58,13 @@ export interface BusinessMetrics {
     fiatCurrency: string;
     amountCrypto: number;
     cryptoAsset: string;
+    network?: string;
+    customerWallet?: string;
     status: string;
     date: string;
     time: string;
     timestamp: number;
+    txHash?: string;
   }>;
 }
 
@@ -74,6 +77,7 @@ export interface AIAssistantContext {
   metrics: BusinessMetrics;
   walletState?: WalletState;
   subscriptionState?: SubscriptionState;
+  balances?: Record<string, AssetBalance>;
   liveRates?: Record<string, number>;
   liveRatesUsd?: Record<string, number>;
   clientTime: string;
@@ -264,17 +268,20 @@ export function computeBusinessMetrics(
     salesTrend = 'increasing';
   }
 
-  const recentTransactions = sorted.slice(0, 10).map((t) => ({
+  const recentTransactions = sorted.slice(0, 15).map((t) => ({
     id: t.id,
     reference: t.reference || t.id.slice(0, 8),
     amountFiat: t.amountFiat,
     fiatCurrency: t.fiatCurrency || fiatCurrency,
     amountCrypto: t.amountCrypto,
     cryptoAsset: t.cryptoAsset,
+    network: t.network,
+    customerWallet: t.customerWallet,
     status: t.status,
     date: t.formattedDate || new Date(t.timestamp).toLocaleDateString(),
     time: t.formattedTime || new Date(t.timestamp).toLocaleTimeString(),
     timestamp: t.timestamp,
+    txHash: t.txHash,
   }));
 
   return {
@@ -313,11 +320,12 @@ export function computeBusinessMetrics(
 }
 
 /**
- * Ask the AI Business Assistant
+ * Ask the AI Business Assistant with abort support
  */
 export async function queryAIBusinessAssistant(
   prompt: string,
-  context: AIAssistantContext
+  context: AIAssistantContext,
+  signal?: AbortSignal
 ): Promise<{ success: boolean; answer: string }> {
   try {
     const response = await fetch('/api/ai/assistant', {
@@ -325,11 +333,16 @@ export async function queryAIBusinessAssistant(
       headers: {
         'Content-Type': 'application/json',
       },
+      signal,
       body: JSON.stringify({
         prompt,
         context,
       }),
     });
+
+    if (signal?.aborted) {
+      throw new DOMException('Request was aborted', 'AbortError');
+    }
 
     const data = await response.json();
 
@@ -342,6 +355,9 @@ export async function queryAIBusinessAssistant(
       answer: data.answer,
     };
   } catch (err: any) {
+    if (err.name === 'AbortError') {
+      throw err;
+    }
     console.warn('[AI Assistant Fetch Fallback]:', err.message);
     // Fallback to deterministic instant analytics engine if network fails
     const localAnswer = generateLocalDeterministicAnswer(prompt, context);
@@ -353,7 +369,7 @@ export async function queryAIBusinessAssistant(
 }
 
 /**
- * Local Deterministic Analytics Engine (Guarantees zero-latency and 100% accurate fallback)
+ * Local Deterministic Analytics Engine (Guarantees zero-latency and 100% accurate fallback with zero fake data)
  */
 export function generateLocalDeterministicAnswer(
   prompt: string,
@@ -367,6 +383,20 @@ export function generateLocalDeterministicAnswer(
   const fmt = (num: number) => {
     return `${sym}${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
+
+  // If user has 0 total transactions in ledger
+  if (m.totalTransactionsCount === 0) {
+    if (q.includes('today')) {
+      return `### 📅 Today's Sales\n\n- **Today's Revenue:** **${fmt(0)}**\n- **Completed Transactions:** **0**\n\nYou have not recorded any customer transactions today. Process customer payments on the POS screen to see live data here.`;
+    }
+    if (q.includes('month') || q.includes('week') || q.includes('yesterday')) {
+      return `### 📊 Real Ledger Status\n\n- **Total Revenue:** **${fmt(0)}**\n- **Total Transactions:** **0**\n\nThere are no recorded transactions for this timeframe in your terminal's local ledger.`;
+    }
+    if (q.includes('token') || q.includes('verse') || q.includes('usdt') || q.includes('btc')) {
+      return `### 🪙 Cryptocurrency Breakdown\n\nNo crypto payments have been received yet. Merchant X supports direct on-chain settlements in **VERSE, USDT, USDC, ETH, POL, and BTC**.`;
+    }
+    return `### 📊 Real Business Overview\n\n- **Total Transactions Recorded:** **0**\n- **Total Gross Revenue:** **${fmt(0)}**\n- **Settlement Wallet Status:** ${context.walletState?.isConnected ? `Connected (\`${context.walletState.evmAddress?.slice(0, 8)}...\`)` : 'Not Connected'}\n\nYour terminal currently has **0 transactions recorded**. Once you process real customer payments via the POS screen, all sales metrics, token volume breakdowns, and revenue comparisons will automatically populate here.`;
+  }
 
   // 1. Today's sales
   if (q.includes('today') || q.includes('how much did i sell today')) {

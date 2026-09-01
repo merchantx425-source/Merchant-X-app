@@ -336,18 +336,22 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
           isFullscreen ? 'h-full max-w-none rounded-none' : 'max-h-[96dvh] h-full sm:h-auto'
         }`}
       >
-        {/* TOP BAR - CLEAN & PROMINENT MERCHANT X */}
-        <div className="flex items-center justify-between px-3 sm:px-6 py-2.5 sm:py-3.5 bg-[#111420] border-b border-zinc-800 shrink-0">
+        {/* TOP BAR - CLEAN & PROMINENT TUTORIAL VIDEO HEADER */}
+        <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 bg-[#111420] border-b border-zinc-800 shrink-0">
           <div className="flex items-center gap-3">
             <MerchantXLogo size="sm" />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-amber-400 font-display">
-                  Merchant X POS Video Demo
+                <span className="px-2 py-0.5 bg-amber-500 text-black text-[10px] sm:text-xs font-black uppercase tracking-widest rounded font-display shadow-sm shadow-amber-500/30 flex items-center gap-1">
+                  <span>🎬</span>
+                  <span>TUTORIAL VIDEO</span>
+                </span>
+                <span className="text-[10px] sm:text-xs font-bold text-amber-300 font-mono hidden xs:inline">
+                  • Interactive Step-by-Step Guide
                 </span>
               </div>
-              <h2 className="text-xs sm:text-sm font-bold text-white leading-tight truncate max-w-[200px] sm:max-w-none">
-                VERSE Payment via Bitcoin.com Wallet
+              <h2 className="text-xs sm:text-sm font-black text-white leading-tight mt-0.5">
+                How to Accept Crypto & VERSE Payments on Merchant X
               </h2>
             </div>
           </div>
@@ -364,9 +368,10 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
             <button
               type="button"
               onClick={handleClose}
-              className="p-1.5 sm:p-2 text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-red-500/20 hover:border-red-500/50 border border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-sm group"
-              title="Close Video Demo"
+              className="px-2.5 py-1.5 text-xs font-bold text-zinc-300 hover:text-white bg-zinc-800/80 hover:bg-red-500/20 hover:border-red-500/50 border border-zinc-700/80 rounded-xl transition-all cursor-pointer shadow-sm group flex items-center gap-1.5"
+              title="Close Tutorial Video"
             >
+              <span>Close</span>
               <X className="w-4 h-4 text-zinc-400 group-hover:text-white" />
             </button>
           </div>
@@ -374,41 +379,56 @@ export const VideoTutorialModal: React.FC<VideoTutorialModalProps> = ({ isOpen, 
 
         {/* MAIN VIDEO STAGE */}
         <div className="relative flex-1 bg-gradient-to-b from-[#090a10] via-[#0f121d] to-[#0a0c13] p-2.5 sm:p-5 overflow-y-auto flex flex-col justify-between min-h-0">
-          {/* Header Scene Info */}
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-zinc-800/60">
-            <div className="space-y-0.5">
+          {/* Header Scene Info with Prominent TUTORIAL VIDEO Banner */}
+          <div className="relative z-10 space-y-2 pb-2.5 border-b border-zinc-800/60">
+            {/* Bold Tutorial Video Explainer Strip */}
+            <div className="flex items-center justify-between bg-gradient-to-r from-amber-500/20 via-amber-500/10 to-transparent border border-amber-500/40 px-3 py-1.5 rounded-xl text-amber-300">
               <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono text-[11px] font-bold rounded-md">
-                  SCENE {activeStep.id} OF {TUTORIAL_13_STEPS.length}
-                </span>
-                <span
-                  className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
-                    activeStep.roleBadge === 'MERCHANT DEVICE'
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                      : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
-                  }`}
-                >
-                  {activeStep.roleBadge === 'MERCHANT DEVICE'
-                    ? '💻 Merchant Device (Merchant X)'
-                    : '📱 Customer Device (Bitcoin.com Wallet)'}
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                <span className="font-extrabold text-xs sm:text-sm uppercase tracking-wider font-display text-white">
+                  TUTORIAL VIDEO: <span className="text-amber-400">Merchant & Customer Flow Walkthrough</span>
                 </span>
               </div>
-              <h3 className="text-base sm:text-lg font-bold font-display text-white tracking-tight">
-                {activeStep.title}
-              </h3>
-              <p className="text-xs text-zinc-400">{activeStep.subtitle}</p>
+              <span className="text-[10px] font-mono bg-black/60 border border-amber-500/30 px-2 py-0.5 rounded-md text-amber-300 font-bold hidden sm:inline-block">
+                Scene {activeStep.id} of {TUTORIAL_13_STEPS.length}
+              </span>
             </div>
 
-            {/* Subtle Audio Status Indicator */}
-            <div className="flex items-center gap-2 self-start sm:self-auto bg-zinc-900/90 border border-zinc-800 px-3 py-1.5 rounded-xl">
-              <div className="flex items-end gap-0.5 h-3.5">
-                <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-pulse h-3' : 'h-1'}`} />
-                <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-bounce h-3.5' : 'h-1.5'}`} />
-                <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-pulse h-2' : 'h-1'}`} />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono text-[11px] font-bold rounded-md">
+                    SCENE {activeStep.id} OF {TUTORIAL_13_STEPS.length}
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 text-[10px] font-bold rounded-full border ${
+                      activeStep.roleBadge === 'MERCHANT DEVICE'
+                        ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                        : 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300'
+                    }`}
+                  >
+                    {activeStep.roleBadge === 'MERCHANT DEVICE'
+                      ? '💻 Merchant Device (Merchant X)'
+                      : '📱 Customer Device (Bitcoin.com Wallet)'}
+                  </span>
+                </div>
+                <h3 className="text-base sm:text-lg font-bold font-display text-white tracking-tight">
+                  {activeStep.title}
+                </h3>
+                <p className="text-xs text-zinc-400">{activeStep.subtitle}</p>
               </div>
-              <span className="text-[11px] font-mono text-zinc-400">
-                {isMuted ? 'Muted' : 'Audio On'}
-              </span>
+
+              {/* Subtle Audio Status Indicator */}
+              <div className="flex items-center gap-2 self-start sm:self-auto bg-zinc-900/90 border border-zinc-800 px-3 py-1.5 rounded-xl">
+                <div className="flex items-end gap-0.5 h-3.5">
+                  <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-pulse h-3' : 'h-1'}`} />
+                  <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-bounce h-3.5' : 'h-1.5'}`} />
+                  <span className={`w-1 bg-amber-400 rounded-full ${isPlaying && !isMuted ? 'animate-pulse h-2' : 'h-1'}`} />
+                </div>
+                <span className="text-[11px] font-mono text-zinc-400">
+                  {isMuted ? 'Muted' : 'Audio On'}
+                </span>
+              </div>
             </div>
           </div>
 

@@ -753,6 +753,7 @@ export default function App() {
             transactions={transactions}
             cryptoRatesUsd={cryptoRatesUsd}
             cryptoInFiatRates={cryptoInFiatRates}
+            balances={balances}
           />
         )}
       </main>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme, TransactionRecord } from '../types/merchant';
+import { AppSettings, WalletState, FiatCurrency, AppTheme, SubscriptionState, ReceiptTheme, TransactionRecord, AssetBalance } from '../types/merchant';
 import { SUPPORTED_FIAT } from '../config/constants';
 import { formatAddress } from '../services/blockchainService';
 import {
@@ -75,6 +75,7 @@ interface SettingsProps {
   transactions?: TransactionRecord[];
   cryptoRatesUsd?: Record<string, number>;
   cryptoInFiatRates?: Record<string, number>;
+  balances?: Record<string, AssetBalance>;
 }
 
 const RECEIPT_THEMES: { id: ReceiptTheme; name: string; previewColor: string }[] = [
@@ -102,6 +103,7 @@ export const Settings: React.FC<SettingsProps> = ({
   transactions = [],
   cryptoRatesUsd = {},
   cryptoInFiatRates = {},
+  balances = {},
 }) => {
   const [showPrivacy, setShowPrivacy] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
@@ -802,22 +804,22 @@ export const Settings: React.FC<SettingsProps> = ({
             className="w-full p-4 flex items-center justify-between hover:bg-[#1a1d28] transition-colors cursor-pointer text-left group"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                <Video className="w-4 h-4" />
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-md shadow-amber-500/10">
+                <Video className="w-5 h-5 text-amber-400" />
               </div>
               <div>
-                <div className="text-sm font-semibold text-white flex items-center gap-2">
-                  <span>Merchant X Masterclass</span>
-                  <span className="px-1.5 py-0.2 bg-amber-500/20 text-amber-300 text-[9px] font-bold rounded">
-                    Interactive Walkthrough
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <span className="px-2 py-0.5 bg-amber-500 text-black text-[10px] font-black uppercase rounded tracking-wider">
+                    🎬 TUTORIAL VIDEO
                   </span>
+                  <span className="text-xs text-amber-300 font-bold">Interactive Guide</span>
                 </div>
-                <div className="text-xs text-zinc-400">
-                  Full step-by-step video tutorial demonstrating POS setup, Verse payments & receipt flow
+                <div className="text-xs text-zinc-300 mt-1">
+                  Step-by-step video demonstration on accepting VERSE & crypto payments, scanning QRs, and printing receipts
                 </div>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-amber-400 transition-colors" />
+            <ChevronRight className="w-5 h-5 text-zinc-400 group-hover:text-amber-400 transition-colors" />
           </button>
 
           <button
@@ -1078,6 +1080,7 @@ export const Settings: React.FC<SettingsProps> = ({
         settings={settings}
         walletState={walletState}
         subscriptionState={subscriptionState}
+        balances={balances}
         cryptoRatesUsd={cryptoRatesUsd}
         cryptoInFiatRates={cryptoInFiatRates}
         initialPrompt={aiInitialPrompt}
